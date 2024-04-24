@@ -1,0 +1,68 @@
+module DE1_SoC_Computer (
+    // [List of all FPGA and HPS Pins as defined previously]
+);
+
+//=======================================================
+// PARAMETER declarations
+//=======================================================
+
+//=======================================================
+// PORT declarations
+//=======================================================
+
+// [All FPGA Pins, Clocks, and I/O Ports declarations]
+
+//=======================================================
+// REG/WIRE declarations
+//=======================================================
+
+wire [7:0] vga_r, vga_g, vga_b;
+wire vga_hs, vga_vs, vga_blank_n, vga_sync_n, vga_clk;
+
+// For Seven Segment Displays
+wire [6:0] hex0, hex1, hex2, hex3, hex4, hex5;
+
+//=======================================================
+//  Structural coding
+//=======================================================
+
+// Orbital Mechanics and VGA Display Logic (simplified integration)
+SpaceShooter space_shooter_inst(
+    .clock_50(CLOCK_50),
+    .reset_n(~KEY[0]),  // Assuming KEY[0] is the reset button
+    .VGA_R(vga_r),
+    .VGA_G(vga_g),
+    .VGA_B(vga_b),
+    .VGA_HS(vga_hs),
+    .VGA_VS(vga_vs),
+    .VGA_BLANK_N(vga_blank_n),
+    .VGA_SYNC_N(vga_sync_n),
+    .VGA_CLK(vga_clk)
+);
+
+// Assign VGA signals to top-level FPGA pins
+assign VGA_R = vga_r;
+assign VGA_G = vga_g;
+assign VGA_B = vga_b;
+assign VGA_HS = vga_hs;
+assign VGA_VS = vga_vs;
+assign VGA_BLANK_N = vga_blank_n;
+assign VGA_SYNC_N = vga_sync_n;
+assign VGA_CLK = vga_clk;
+
+// HexDigit instances for seven-segment display control
+HexDigit digit0(HEX0, hex0);
+HexDigit digit1(HEX1, hex1);
+HexDigit digit2(HEX2, hex2);
+HexDigit digit3(HEX3, hex3);
+assign HEX4 = 7'b1111111;  // Optionally controlled
+assign HEX5 = 7'b1111111;  // Optionally controlled
+
+// Example Computer_System instantiation with connections
+Computer_System The_System (
+    // All connections including VGA, HexDigits, and other I/O
+    // Ensure all I/Os are properly connected as per your system requirements
+);
+
+endmodule
+
