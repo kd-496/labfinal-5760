@@ -66,3 +66,12 @@ Computer_System The_System (
 
 endmodule
 
+
+Error (12006): Node instance "vga_pll" instantiates undefined entity "pll". Ensure that required library paths are specified correctly, define the specified entity, or change the instantiation. If this entity represents Intel FPGA or third-party IP, generate the synthesis files for the IP.
+Error: Quartus Prime Analysis & Synthesis was unsuccessful. 1 error, 58 warnings
+	Error: Peak virtual memory: 5052 megabytes
+	Error: Processing ended: Wed Apr 24 14:16:18 2024
+	Error: Elapsed time: 00:02:46
+	Error: Total CPU time (on all processors): 00:02:53
+Error (293001): Quartus Prime Full Compilation was unsuccessful. 3 errors, 58 warnings
+
