@@ -1,3 +1,4 @@
+
 module DE1_SoC_Computer (
 	////////////////////////////////////
 	// FPGA Pins
@@ -375,7 +376,7 @@ output					HPS_USB_STP;
         y = 32'd0;  // Initial y
         vx = 32'd0; // Initial vx
         vy = 32'd7758; // Initial vy (orbital velocity at 400 km altitude)
-		  r = 32'd400000;
+		  r = 32'd6771000;
     end
 
     // Update positions and velocities
@@ -385,7 +386,7 @@ output					HPS_USB_STP;
             y <= 32'd0;
             vx <= 32'd0;
             vy <= 32'd7758;
-				r <= 32'd400000;
+				r <= 32'd6771000;
         end else begin
             // Calculate radial distance squared and cubed
           //  r_squared <= x * x + y * y;
@@ -429,8 +430,8 @@ Computer_System The_System (
 	////////////////////////////////////
 
 	
-	.vga_pio_locked_export			(vga_pll_lock),           //       vga_pio_locked.export
-	.vga_pio_outclk0_clk				(vga_pll),              //      vga_pio_outclk0.clk
+//	.vga_pio_locked_export			(vga_pll_lock),           //       vga_pio_locked.export
+//	.vga_pio_outclk0_clk				(vga_pll),              //      vga_pio_outclk0.clk
 	
 	
 	// Global signals
@@ -446,14 +447,14 @@ Computer_System The_System (
 	.vga_pll_ref_clk_clk 					(CLOCK2_50),
 	.vga_pll_ref_reset_reset				(1'b0),
 	.vga_CLK										(VGA_CLK),
-	.vga_BLANK									(VGA_BLANK_N),
-	.vga_SYNC									(VGA_SYNC_N),
-	.vga_HS										(VGA_HS),
-	.vga_VS										(VGA_VS),
-	.vga_R										(VGA_R),
-	.vga_G										(VGA_G),
-	.vga_B										(VGA_B),
-	
+//	.vga_BLANK									(VGA_BLANK_N),
+//	.vga_SYNC									(VGA_SYNC_N),
+//	.vga_HS										(VGA_HS),
+//	.vga_VS										(VGA_VS),
+//	.vga_R										(VGA_R),
+//	.vga_G										(VGA_G),
+//	.vga_B										(VGA_B),
+//	
 	// SDRAM
 	.sdram_clk_clk								(DRAM_CLK),
    .sdram_addr									(DRAM_ADDR),
@@ -638,3 +639,4 @@ module vga_controller(
         end
     end
 endmodule
+
