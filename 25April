@@ -627,7 +627,7 @@ module vga_controller(
                 VGA_R <= 255;
                 VGA_G <= 255;
                 VGA_B <= 255;
-            end else begin
+            else begin
                 VGA_R <= 0;
                 VGA_G <= 0;
                 VGA_B <= 0;
@@ -639,4 +639,5 @@ module vga_controller(
         end
     end
 endmodule
+
 
