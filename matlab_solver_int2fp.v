@@ -1,3 +1,4 @@
+
 module Orbital_Path (
     input clk,           // Clock input
     input rst,           // Reset input
@@ -79,5 +80,43 @@ always @(posedge clk) begin
         int2fp_vy.iInteger <= vy_int;
     end
 end
+
+
+// Other declarations...
+reg [31:0] X_array[0:steps-1]; // Array for storing X positions
+reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
+reg [31:0] T;  // Total time in seconds (1 hour)
+
+
+// Simulation time
+always @(posedge clk) begin
+    if (rst) begin
+        steps <= T / dt; // Calculate number of steps for simulation
+        i <= 0; // Initialize loop counter
+    end else begin
+        // Store positions for plotting
+        if (i < steps) begin
+            X_array[i] <= x_int;
+            Y_array[i] <= y_int;
+            i <= i + 1;
+        end
+    end
+end
+
+
+// Other calculations...
+// Plotting the orbit
+always @(posedge clk) begin
+    if (rst) begin
+        X <= 0; // Reset X position output
+        Y <= 0; // Reset Y position output
+    end else begin
+        if (i == steps) begin
+            X <= X_array[steps-1]; // Output X position
+            Y <= Y_array[steps-1]; // Output Y position
+        end
+    end
+end
+
 
 endmodule
