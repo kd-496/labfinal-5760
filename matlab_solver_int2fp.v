@@ -9,6 +9,7 @@ module Orbital_Path (
 parameter G = 32'h0000005D;  // Gravitational constant in m^3 kg^-1 s^-2 (6.67430e-11)
 parameter M = 32'h00000005;  // Mass of Earth in kg (5.972e24)
 parameter DT = 32'h0000000A;  // Time step in seconds
+parameter T = 3600;           // Total time in seconds (1 hour)
 
 // Initial position and velocity (floating-point format)
 reg signed [15:0] x_fp, y_fp, vx_fp, vy_fp;
@@ -29,6 +30,10 @@ Fp2Int fp2int_vy (.iA(vy_fp), .oInteger(vy_int));
 reg [7:0] steps;  // Number of steps for simulation
 reg [31:0] i; // Loop counter
 
+// Array for storing X and Y positions
+reg [31:0] X_array[0:steps-1]; // Array for storing X positions
+reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
+
 // Simulation time
 always @(posedge clk) begin
     if (rst) begin
@@ -48,12 +53,12 @@ always @(posedge clk) begin
         if (i < steps) begin
             // Calculate radial distance
             wire [31:0] r_squared;
-            FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(r_squared));
+            FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(x_fp_squared));
             FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
             FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
             FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
             // Calculate acceleration components
-            wire [31:0] ax, ay;
+            wire [31:0] ax, ay, inv_radius_squared, inv_radius, prod_x, prod_y;
             FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
             FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
             FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
@@ -92,10 +97,5 @@ always @(posedge clk) begin
         end
     end
 end
-
-// Array for storing X and Y positions
-reg [31:0] X_array[0:steps-1]; // Array for storing X positions
-reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
-reg [31:0] T;  // Total time in seconds (1 hour)
 
 endmodule
