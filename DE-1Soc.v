@@ -357,10 +357,6 @@ output					HPS_USB_STP;
 //  REG/WIRE declarations
 //=======================================================
 
-
-wire [7:0] vga_r, vga_g, vga_b;
-wire vga_hs, vga_vs, vga_blank_n, vga_sync_n, vga_clk;
-
 wire			[15: 0]	hex3_hex0;
 //wire			[15: 0]	hex5_hex4;
 
@@ -376,72 +372,117 @@ HexDigit Digit1(HEX1, hex3_hex0[7:4]);
 HexDigit Digit2(HEX2, hex3_hex0[11:8]);
 HexDigit Digit3(HEX3, hex3_hex0[15:12]);
 
+// VGA clock and reset lines
+wire vga_pll_lock ;
+wire vga_pll ;
+reg  vga_reset ;
+
+// M10k memory control and data
+wire 		[7:0] 	M10k_out ;
+reg 		[7:0] 	write_data ;
+reg 		[18:0] 	write_address ;
+reg 		[18:0] 	read_address ;
+reg 					write_enable ;
+
+// M10k memory clock
+wire 					M10k_pll ;
+wire 					M10k_pll_locked ;
+
+// Memory writing control registers
+reg 		[7:0] 	arbiter_state ;
+reg 		[9:0] 	x_coord ;
+reg 		[9:0] 	y_coord ;
+
+// Wires for connecting VGA driver to memory
+wire 		[9:0]		next_x ;
+wire 		[9:0] 	next_y ;
+
+always@(posedge M10k_pll) begin
+	// Zero everything in reset
+	if (~KEY[0]) begin
+		arbiter_state <= 8'd_0 ;
+		vga_reset <= 1'b_1 ;
+		x_coord <= 10'd_0 ;
+		y_coord <= 10'd_0 ;
+	end
+	// Otherwiser repeatedly write a large checkerboard to memory
+	else begin
+		if (arbiter_state == 8'd_0) begin
+			vga_reset <= 1'b_0 ;
+			write_enable <= 1'b_1 ;
+			write_address <= (19'd_640 * y_coord) + x_coord ;
+			if (x_coord < 10'd_320) begin
+				if (y_coord < 10'd_240) begin
+					write_data <= 8'b_111_000_00 ;
+				end
+				else begin
+					write_data <= 8'b_000_111_00 ;
+				end
+			end
+			else begin
+				if (y_coord < 10'd_240) begin
+					write_data <= 8'b_000_000_11 ;
+				end
+				else begin
+					write_data <= 8'b_111_111_00 ;
+				end
+			end
+			x_coord <= (x_coord==10'd_639)?10'd_0:(x_coord + 10'd_1) ;
+			y_coord <= (x_coord==10'd_639)?((y_coord==10'd_479)?10'd_0:(y_coord+10'd_1)):y_coord ;
+			arbiter_state <= 8'd_0 ;
+		end
+	end
+end
+
+
+//Instantiate Orbital Path block
+Orbital_Path ( .clk ( ), .rst ( ), .X ( ), .Y( ));
+
+// Instantiate memory
+M10K_1000_8 pixel_data( .q(M10k_out), // contains pixel color (8 bit) for display
+								.d(write_data),
+								.write_address(write_address),
+								.read_address((19'd_640*next_y) + next_x),
+								.we(write_enable),
+								.clk(M10k_pll)
+);
+
+// Instantiate VGA driver					
+vga_driver DUT   (	.clock(vga_pll), 
+							.reset(vga_reset),
+							.color_in(M10k_out),	// Pixel color (8-bit) from memory
+							.next_x(next_x),		// This (and next_y) used to specify memory read address
+							.next_y(next_y),		// This (and next_x) used to specify memory read address
+							.hsync(VGA_HS),
+							.vsync(VGA_VS),
+							.red(VGA_R),
+							.green(VGA_G),
+							.blue(VGA_B),
+							.sync(VGA_SYNC_N),
+							.clk(VGA_CLK),
+							.blank(VGA_BLANK_N)
+);
+
+
 //=======================================================
 //  Structural coding
 //=======================================================
-
-SpaceShooter space_shooter_inst(
-    .clock_50(CLOCK_50),
-    .reset_n(~KEY[0]),  // Assuming KEY[0] is the reset button
-    .VGA_R(vga_r),
-    .VGA_G(vga_g),
-    .VGA_B(vga_b),
-    .VGA_HS(vga_hs),
-    .VGA_VS(vga_vs),
-    .VGA_BLANK_N(vga_blank_n),
-    .VGA_SYNC_N(vga_sync_n),
-    .VGA_CLK(vga_clk)
-);
-
-// Assign VGA signals to top-level FPGA pins
-assign VGA_R = vga_r;
-assign VGA_G = vga_g;
-assign VGA_B = vga_b;
-assign VGA_HS = vga_hs;
-assign VGA_VS = vga_vs;
-assign VGA_BLANK_N = vga_blank_n;
-assign VGA_SYNC_N = vga_sync_n;
-assign VGA_CLK = vga_clk;
-
-
+// From Qsys
 
 Computer_System The_System (
 	////////////////////////////////////
 	// FPGA Side
 	////////////////////////////////////
+	.vga_pio_locked_export			(vga_pll_lock),           //       vga_pio_locked.export
+	.vga_pio_outclk0_clk				(vga_pll),              //      vga_pio_outclk0.clk
+	.m10k_pll_locked_export			(M10k_pll_locked),          //      m10k_pll_locked.export
+	.m10k_pll_outclk0_clk			(M10k_pll),            //     m10k_pll_outclk0.clk
 
 	// Global signals
 	.system_pll_ref_clk_clk					(CLOCK_50),
 	.system_pll_ref_reset_reset			(1'b0),
-
-	// AV Config
-	.av_config_SCLK							(FPGA_I2C_SCLK),
-	.av_config_SDAT							(FPGA_I2C_SDAT),
-
-	// VGA Subsystem
-	.vga_pll_ref_clk_clk 					(CLOCK2_50),
-	.vga_pll_ref_reset_reset				(1'b0),
-	.vga_CLK										(VGA_CLK),
-	.vga_BLANK									(VGA_BLANK_N),
-	.vga_SYNC									(VGA_SYNC_N),
-	.vga_HS										(VGA_HS),
-	.vga_VS										(VGA_VS),
-	.vga_R										(VGA_R),
-	.vga_G										(VGA_G),
-	.vga_B										(VGA_B),
 	
-	// SDRAM
-	.sdram_clk_clk								(DRAM_CLK),
-   .sdram_addr									(DRAM_ADDR),
-	.sdram_ba									(DRAM_BA),
-	.sdram_cas_n								(DRAM_CAS_N),
-	.sdram_cke									(DRAM_CKE),
-	.sdram_cs_n									(DRAM_CS_N),
-	.sdram_dq									(DRAM_DQ),
-	.sdram_dqm									({DRAM_UDQM,DRAM_LDQM}),
-	.sdram_ras_n								(DRAM_RAS_N),
-	.sdram_we_n									(DRAM_WE_N),
-	
+
 	////////////////////////////////////
 	// HPS Side
 	////////////////////////////////////
@@ -546,103 +587,776 @@ Computer_System The_System (
 	.hps_io_hps_io_usb1_inst_DIR		(HPS_USB_DIR),
 	.hps_io_hps_io_usb1_inst_NXT		(HPS_USB_NXT)
 );
+endmodule // end top level
 
+
+module Orbital_Path (
+    input clk,           // Clock input
+    input rst,           // Reset input
+    output reg [31:0] X, // X position output
+    output reg [31:0] Y  // Y position output
+);
+
+// Constants and initial conditions
+parameter G = 32'h0000005D;  // Gravitational constant in m^3 kg^-1 s^-2 (6.67430e-11)
+parameter M = 32'h00000005;  // Mass of Earth in kg (5.972e24)
+parameter DT = 32'h0000000A;  // Time step in seconds
+parameter T = 3600;           // Total time in seconds (1 hour)
+
+// Initial position and velocity (floating-point format)
+reg signed [15:0] x_fp, y_fp, vx_fp, vy_fp;
+// Initial position and velocity (integer format)
+reg [31:0] x_int, y_int, vx_int, vy_int;
+// Conversion from floating-point to integer
+Int2Fp int2fp_x (.iInteger(x_int), .oA(x_fp));
+Int2Fp int2fp_y (.iInteger(y_int), .oA(y_fp));
+Int2Fp int2fp_vx (.iInteger(vx_int), .oA(vx_fp));
+Int2Fp int2fp_vy (.iInteger(vy_int), .oA(vy_fp));
+// Conversion from integer to floating-point
+Fp2Int fp2int_x (.iA(x_fp), .oInteger(x_int));
+Fp2Int fp2int_y (.iA(y_fp), .oInteger(y_int));
+Fp2Int fp2int_vx (.iA(vx_fp), .oInteger(vx_int));
+Fp2Int fp2int_vy (.iA(vy_fp), .oInteger(vy_int));
+
+// Other declarations...
+reg [7:0] steps;  // Number of steps for simulation
+reg [31:0] i; // Loop counter
+
+// Array for storing X and Y positions
+reg [31:0] X_array[0:steps-1]; // Array for storing X positions
+reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
+
+// Simulation time
+always @(posedge clk) begin
+    if (rst) begin
+        // Set initial conditions
+        x_fp <= $signed(32'h00026F90); // Initial x position in floating-point format
+        y_fp <= 32'h00000000;          // Initial y position in floating-point format
+        vx_fp <= 32'h00000000;         // Initial x velocity in floating-point format
+        vy_fp <= $signed(sqrt(G * M / x_fp)); // Initial y velocity in floating-point format
+        x_int <= 6.371e6 + 400000;     // Initial x position in integer format
+        y_int <= 0;                     // Initial y position in integer format
+        vx_int <= 0;                   // Initial x velocity in integer format
+        vy_int <= sqrt(G * M / x_int); // Initial y velocity in integer format
+        steps <= T / DT;               // Calculate number of steps for simulation
+        i <= 0;                        // Initialize loop counter
+    end else begin
+        // Euler's method to update position and velocity
+        if (i < steps) begin
+            // Calculate radial distance
+            wire [31:0] r_squared;
+            FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(x_fp_squared));
+            FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
+            FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
+            FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
+            // Calculate acceleration components
+            wire [31:0] ax, ay, inv_radius_squared, inv_radius, prod_x, prod_y;
+            FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
+            FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
+            FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
+            FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
+            FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
+            FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
+            // Update velocities
+            wire [31:0] dvx, dvy;
+            FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
+            FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
+            FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp), .iB(dvx), .oSum(vx_fp));
+            FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp), .iB(dvy), .oSum(vy_fp));
+            // Update positions
+            wire [31:0] dx, dy;
+            FpMul vx_dt_calc(.iA(vx_fp), .iB(DT), .oProd(dx));
+            FpMul vy_dt_calc(.iA(vy_fp), .iB(DT), .oProd(dy));
+            FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp), .iB(dx), .oSum(x_fp));
+            FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp), .iB(dy), .oSum(y_fp));
+            // Store positions for plotting
+            X_array[i] <= x_int;
+            Y_array[i] <= y_int;
+            i <= i + 1;
+        end
+    end
+end
+
+// Plotting the orbit
+always @(posedge clk) begin
+    if (rst) begin
+        X <= 0; // Reset X position output
+        Y <= 0; // Reset Y position output
+    end else begin
+        if (i == steps) begin
+            X <= X_array[steps-1]; // Output X position
+            Y <= Y_array[steps-1]; // Output Y position
+        end
+    end
+end
+
+endmodule
+
+
+// Declaration of module, include width and signedness of each input/output
+module vga_driver (
+	input wire clock,
+	input wire reset,
+	input [7:0] color_in,
+	output [9:0] next_x,
+	output [9:0] next_y,
+	output wire hsync,
+	output wire vsync,
+	output [7:0] red,
+	output [7:0] green,
+	output [7:0] blue,
+	output sync,
+	output clk,
+	output blank
+);
+	
+	// Horizontal parameters (measured in clock cycles)
+	parameter [9:0] H_ACTIVE  	=  10'd_639 ;
+	parameter [9:0] H_FRONT 	=  10'd_15 ;
+	parameter [9:0] H_PULSE		=  10'd_95 ;
+	parameter [9:0] H_BACK 		=  10'd_47 ;
+
+	// Vertical parameters (measured in lines)
+	parameter [9:0] V_ACTIVE  	=  10'd_479 ;
+	parameter [9:0] V_FRONT 	=  10'd_9 ;
+	parameter [9:0] V_PULSE		=  10'd_1 ;
+	parameter [9:0] V_BACK 		=  10'd_32 ;
+
+//	// Horizontal parameters (measured in clock cycles)
+//	parameter [9:0] H_ACTIVE  	=  10'd_9 ;
+//	parameter [9:0] H_FRONT 	=  10'd_4 ;
+//	parameter [9:0] H_PULSE		=  10'd_4 ;
+//	parameter [9:0] H_BACK 		=  10'd_4 ;
+//	parameter [9:0] H_TOTAL 	=  10'd_799 ;
+//
+//	// Vertical parameters (measured in lines)
+//	parameter [9:0] V_ACTIVE  	=  10'd_1 ;
+//	parameter [9:0] V_FRONT 	=  10'd_1 ;
+//	parameter [9:0] V_PULSE		=  10'd_1 ;
+//	parameter [9:0] V_BACK 		=  10'd_1 ;
+
+	// Parameters for readability
+	parameter 	LOW 	= 1'b_0 ;
+	parameter 	HIGH	= 1'b_1 ;
+
+	// States (more readable)
+	parameter 	[7:0]	H_ACTIVE_STATE 		= 8'd_0 ;
+	parameter 	[7:0] 	H_FRONT_STATE		= 8'd_1 ;
+	parameter 	[7:0] 	H_PULSE_STATE 		= 8'd_2 ;
+	parameter 	[7:0] 	H_BACK_STATE 		= 8'd_3 ;
+
+	parameter 	[7:0]	V_ACTIVE_STATE 		= 8'd_0 ;
+	parameter 	[7:0] 	V_FRONT_STATE		= 8'd_1 ;
+	parameter 	[7:0] 	V_PULSE_STATE 		= 8'd_2 ;
+	parameter 	[7:0] 	V_BACK_STATE 		= 8'd_3 ;
+
+	// Clocked registers
+	reg 		hysnc_reg ;
+	reg 		vsync_reg ;
+	reg 	[7:0]	red_reg ;
+	reg 	[7:0]	green_reg ;
+	reg 	[7:0]	blue_reg ;
+	reg 		line_done ;
+
+	// Control registers
+	reg 	[9:0] 	h_counter ;
+	reg 	[9:0] 	v_counter ;
+
+	reg 	[7:0]	h_state ;
+	reg 	[7:0]	v_state ;
+
+	// State machine
+	always@(posedge clock) begin
+		// At reset . . .
+  		if (reset) begin
+			// Zero the counters
+			h_counter 	<= 10'd_0 ;
+			v_counter 	<= 10'd_0 ;
+			// States to ACTIVE
+			h_state 	<= H_ACTIVE_STATE  ;
+			v_state 	<= V_ACTIVE_STATE  ;
+			// Deassert line done
+			line_done 	<= LOW ;
+  		end
+  		else begin
+			//////////////////////////////////////////////////////////////////////////
+			///////////////////////// HORIZONTAL /////////////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			if (h_state == H_ACTIVE_STATE) begin
+				// Iterate horizontal counter, zero at end of ACTIVE mode
+				h_counter <= (h_counter==H_ACTIVE)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// Deassert line done
+				line_done <= LOW ;
+				// State transition
+				h_state <= (h_counter == H_ACTIVE)?H_FRONT_STATE:H_ACTIVE_STATE ;
+			end
+			// Assert done flag, wait here for reset
+			if (h_state == H_FRONT_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_FRONT)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// State transition
+				h_state <= (h_counter == H_FRONT)?H_PULSE_STATE:H_FRONT_STATE ;
+			end
+			if (h_state == H_PULSE_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_PULSE)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= LOW ;
+				// State transition
+				h_state <= (h_counter == H_PULSE)?H_BACK_STATE:H_PULSE_STATE ;
+			end
+			if (h_state == H_BACK_STATE) begin
+				// Iterate horizontal counter, zero at end of H_FRONT mode
+				h_counter <= (h_counter==H_BACK)?10'd_0:(h_counter + 10'd_1) ;
+				// Set hsync
+				hysnc_reg <= HIGH ;
+				// State transition
+				h_state <= (h_counter == H_BACK)?H_ACTIVE_STATE:H_BACK_STATE ;
+				// Signal line complete at state transition (offset by 1 for synchronous state transition)
+				line_done <= (h_counter == (H_BACK-1))?HIGH:LOW ;
+			end
+			//////////////////////////////////////////////////////////////////////////
+			///////////////////////// VERTICAL ///////////////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			if (v_state == V_ACTIVE_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_ACTIVE)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in active mode
+				vsync_reg <= HIGH ;
+				// state transition - only on end of lines
+				v_state <= (line_done==HIGH)?((v_counter==V_ACTIVE)?V_FRONT_STATE:V_ACTIVE_STATE):V_ACTIVE_STATE ;
+			end
+			if (v_state == V_FRONT_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_FRONT)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in front porch
+				vsync_reg <= HIGH ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_FRONT)?V_PULSE_STATE:V_FRONT_STATE):V_FRONT_STATE ;
+			end
+			if (v_state == V_PULSE_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_PULSE)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// clear vsync in pulse
+				vsync_reg <= LOW ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_PULSE)?V_BACK_STATE:V_PULSE_STATE):V_PULSE_STATE ;
+			end
+			if (v_state == V_BACK_STATE) begin
+				// increment vertical counter at end of line, zero on state transition
+				v_counter <= (line_done==HIGH)?((v_counter==V_BACK)?10'd_0:(v_counter + 10'd_1)):v_counter ;
+				// set vsync in back porch
+				vsync_reg <= HIGH ;
+				// state transition
+				v_state <= (line_done==HIGH)?((v_counter==V_BACK)?V_ACTIVE_STATE:V_BACK_STATE):V_BACK_STATE ;
+			end
+
+			//////////////////////////////////////////////////////////////////////////
+			//////////////////////////////// COLOR OUT ///////////////////////////////
+			//////////////////////////////////////////////////////////////////////////
+			red_reg 		<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[7:5],5'd_0}:8'd_0):8'd_0 ;
+			green_reg 	<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[4:2],5'd_0}:8'd_0):8'd_0 ;
+			blue_reg 	<= (h_state==H_ACTIVE_STATE)?((v_state==V_ACTIVE_STATE)?{color_in[1:0],6'd_0}:8'd_0):8'd_0 ;
+			
+ 	 	end
+	end
+	// Assign output values
+	assign hsync = hysnc_reg ;
+	assign vsync = vsync_reg ;
+	assign red = red_reg ;
+	assign green = green_reg ;
+	assign blue = blue_reg ;
+	assign clk = clock ;
+	assign sync = 1'b_0 ;
+	assign blank = hysnc_reg & vsync_reg ;
+	// The x/y coordinates that should be available on the NEXT cycle
+	assign next_x = (h_state==H_ACTIVE_STATE)?h_counter:10'd_0 ;
+	assign next_y = (v_state==V_ACTIVE_STATE)?v_counter:10'd_0 ;
 
 endmodule
 
 
 
-module SpaceShooter(
-    input clock_50,             // 50 MHz FPGA clock
-    input reset_n,              // Reset button (active low)
-    input [2:0] KEY,            // Control keys for the game (up, down, shoot)
-    output [7:0] VGA_R,         // VGA red channel
-    output [7:0] VGA_G,         // VGA green channel
-    output [7:0] VGA_B,         // VGA blue channel
-    output VGA_HS,              // VGA horizontal sync
-    output VGA_VS,              // VGA vertical sync
-    output VGA_CLK,             // VGA clock
-    output VGA_BLANK_N,         // VGA blanking
-    output VGA_SYNC_N           // VGA sync
+
+//============================================================
+// M10K module for testing
+//============================================================
+// See example 12-16 in 
+// http://people.ece.cornell.edu/land/courses/ece5760/DE1_SOC/HDL_style_qts_qii51007.pdf
+//============================================================
+
+module M10K_1000_8( 
+    output reg [7:0] q,
+    input [7:0] d,
+    input [18:0] write_address, read_address,
+    input we, clk
+);
+	 // force M10K ram style
+	 // 307200 words of 8 bits
+    reg [7:0] mem [307200:0]  /* synthesis ramstyle = "no_rw_check, M10K" */;
+	 
+    always @ (posedge clk) begin
+        if (we) begin
+            mem[write_address] <= d;
+		  end
+        q <= mem[read_address]; // q doesn't get d in this clock cycle
+    end
+endmodule
+
+/**************************************************************************
+ * Following floating point modules written by Bruce Land                                       
+ * March 2017      
+ *************************************************************************/
+/**************************************************************************
+ * Floating Point to 16-bit integer                                             *
+ * Combinational      
+ * Numbers with mag > than +/-32768 get clipped to 32768 or -32768
+ *************************************************************************/
+ module Int2Fp(
+		input signed [15:0]	iInteger,
+		output[26:0]	oA		
+ );
+		// output fields
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    
+	 wire [15:0] abs_input ;
+	 // get output sign bit
+	 assign A_s = (iInteger < 0);
+	 // remove sign from input
+	 assign abs_input = (iInteger < 0)? -iInteger : iInteger ;
+	 
+	 // find the most significant (nonzero) bit
+	 wire [7:0]  shft_amt;
+	 assign shft_amt = abs_input[15] ? 8'd3 :
+                      abs_input[14] ? 8'd4 : abs_input[13] ? 8'd5 :
+                      abs_input[12] ? 8'd6 : abs_input[11] ? 8'd7 :
+                      abs_input[10] ? 8'd8 : abs_input[9]  ? 8'd9 :
+                      abs_input[8]  ? 8'd10 : abs_input[7]  ? 8'd11 :
+                      abs_input[6]  ? 8'd12 : abs_input[5]  ? 8'd13 :
+                      abs_input[4]  ? 8'd14 : abs_input[3]  ? 8'd15 :
+                      abs_input[2]  ? 8'd16 : abs_input[1]  ? 8'd17 :
+                      abs_input[0]  ? 8'd18 : 8'd19;	
+	 // exponent 127 + (18-shift_amt)
+	 // 127 is 2^0
+	 // 18 is amount '1' is shifted
+	 assign A_e = 127 + 18 - shft_amt ;
+	 // where the intermediate value is formed
+	 wire [33:0] shift_buffer ;
+	 // remember that the high-order '1' is not stored,
+	 // but is shifted to bit 18
+	 assign shift_buffer = {16'b0, abs_input} << shft_amt ;
+	 assign A_f = shift_buffer[17:0];
+	 assign oA = (iInteger==0)? 27'b0 : {A_s, A_e, A_f};
+	 
+ endmodule //Int2Fp
+ 
+ /**************************************************************************
+ * Floating Point to 16-bit integer                                             *
+ * Combinational      
+ * Numbers with mag > than +/-32768 get clipped to 32768 or -32768
+ *************************************************************************/
+ module Fp2Int(
+		input	 [26:0]	iA,
+		output reg [15:0]	oInteger
+ );
+		// Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
+	 
+	 wire [15:0] max_int = 16'h7fff ; //32768
+	 wire [33:0] shift_buffer ;
+	 // form (1.A_f) and shift it to postiion
+	 assign shift_buffer = {15'b0, 1'b1, A_f}<<(A_e-127) ;
+	 
+	 // If exponent less than 127, oInteger=0
+	 // If exponent greater than 127+14 oInteger=max value
+	 // Between these two values:
+	 //	set up input mantissa with 1.mantissa 
+	 //	   and the "1." in the lowest bit of an extended word.
+	 // 	shift-left by A_e-127
+	 // If the sign bit is set, negate oInteger
+	 	
+	 always @(*) begin
+			if (A_e < 127) oInteger = 16'b0;
+			else if (A_e > 141) begin
+				if (A_s) oInteger = -max_int;
+				else     oInteger = max_int;
+			end
+			else begin
+				if (A_s) oInteger = -shift_buffer[33:18];
+				else     oInteger = shift_buffer[33:18];
+			end
+	 end
+	 
+ endmodule //Fp2Int
+ 
+/**************************************************************************
+ * Floating Point shift                                             *
+ * Combinational      
+ * Negative shift input is right shift
+ *************************************************************************/
+ module FpShift(
+		input	 [26:0]	iA,
+		input   [7:0] 	iShift,
+		output [26:0]	oShifted
+ );
+		// Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
+	 // Flip bit 26
+	 // zero the output if underflow/overflow
+//    assign oShifted = (A_e+iShift<8'd254 && A_e+iShift>8'd2)? 
+//									{A_s, A_e+iShift, A_f} 
+	 assign oShifted = {A_s, A_e+iShift, A_f} ;	
+ endmodule //FpShift
+ 
+/**************************************************************************
+ * Floating Point sign negation                                             *
+ * Combinational                                                          *
+ *************************************************************************/
+ module FpNegate(
+		input	 [26:0]	iA,
+		output [26:0]	oNegative
+ );
+		// Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
+	 // Flip bit 26
+    assign oNegative = {~A_s, A_e, A_f};	
+ endmodule //FpNegate
+
+ /**************************************************************************
+ * Floating Point absolute                                             *
+ * Combinational                                                          *
+ *************************************************************************/
+ module FpAbs(
+		input	 [26:0]	iA,
+		output [26:0]	oAbs
+ );
+		// Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
+	 // zero bit 26
+    assign oAbs = {1'b0, A_e, A_f};	
+ endmodule //Fp absolute
+ 
+ /**************************************************************************
+ * Floating Point compare                                             *
+ * Combinational     
+ * output=1 if A>=B
+ *************************************************************************/
+ module FpCompare(
+		input	 [26:0]	iA,
+		input	 [26:0]	iB,
+		output reg oA_larger
+ );
+		// Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+	 wire        B_s;
+    wire [7:0]  B_e;
+    wire [17:0] B_f;
+    
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
+	 assign B_s = iB[26];
+    assign B_e = iB[25:18];
+    assign B_f = iB[17:0];
+	 
+	 // Determine which of A, B is larger
+	 wire A_mag_larger ;
+    assign A_mag_larger =(A_e > B_e)                   ? 1'b1  :
+                         ((A_e == B_e) && (A_f >= B_f)) ? 1'b1  :
+                         1'b0;
+								 
+	 // now do the sign checks
+	 always @(*) begin
+			if (A_s==0 && B_s==1) begin  // A positive, B negative
+				oA_larger = 1'b1 ;
+			end
+			else if (A_s==1 && B_s==0) begin  // A negative, B positive
+				oA_larger = 1'b0 ;
+			end
+			else if (A_s==0 && B_s==0) begin  // A positive, B positive
+				oA_larger = A_mag_larger ;
+			end
+			else if (A_s==1 && B_s==1) begin  // A negative, B negative
+				oA_larger = ~A_mag_larger ;
+			end
+			else oA_larger  = 0; // make sure no inferred latch
+	 end
+ endmodule //FpCompare
+ 
+/**************************************************************************
+ * Following floating point written by Mark Eiding mje56                                                      *
+ * ECE 5760                                                               *
+ * Modified IEEE single precision FP                                      *
+ * bit 26:      Sign     (0: pos, 1: neg)                                 *
+ * bits[25:18]: Exponent (unsigned)                                       *
+ * bits[17:0]:  Fraction (unsigned)                                       *
+ *  (-1)^SIGN * 2^(EXP-127) * (1+.FRAC)                                   *
+ * (http://en.wikipedia.org/wiki/Single-precision_floating-point_format)  *
+ * Adapted from Skyler Schneider ss868                                    *
+ *************************************************************************/
+/**************************************************************************
+ * Floating Point Fast Inverse Square Root                                *
+ * 5-stage pipeline                                                       *
+ * http://en.wikipedia.org/wiki/Fast_inverse_square_root                  *
+ * Magic number 27'd49920718                                              *
+ * 1.5 = 27'd33423360                                                     *
+ *************************************************************************/
+module FpInvSqrt (
+    input             iCLK,
+    input      [26:0] iA,
+    output     [26:0] oInvSqrt
 );
 
-// Constants for VGA and physics simulation
-parameter H_RES = 640;         // horizontal resolution
-parameter V_RES = 480;         // vertical resolution
-parameter H_FP = 16;           // horizontal front porch
-parameter H_PW = 96;           // horizontal pulse width
-parameter H_BP = 48;           // horizontal back porch
-parameter V_FP = 10;           // vertical front porch
-parameter V_PW = 2;            // vertical pulse width
-parameter V_BP = 33;           // vertical back porch
-parameter G = 16'd1;           // Gravitational constant (scaled)
-parameter M = 16'd10000;       // Mass of planet (arbitrary units)
-parameter dt = 16'd1;          // Time step (arbitrary units)
+    // Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = iA[17:0];
 
-// VGA signal generation
-reg [9:0] h_counter = 0;
-reg [9:0] v_counter = 0;
-wire pixel_clk;
+    //Stage 1
+    wire [26:0] y_1, y_1_out, half_iA_1;
+    assign y_1 = 27'd49920718 - (iA>>1);
+    assign half_iA_1 = {A_s, A_e-8'd1,A_f};
+    FpMul s1_mult ( .iA(y_1), .iB(y_1), .oProd(y_1_out) );
+    //Stage 2
+    reg [26:0] y_2, mult_2_in, half_iA_2;
+    wire [26:0] y_2_out;
+    FpMul s2_mult ( .iA(half_iA_2), .iB(mult_2_in), .oProd(y_2_out) );
+    //Stage 3
+    reg [26:0] y_3, add_3_in;
+    wire [26:0] y_3_out;
+    FpAdd s3_add ( .iCLK(iCLK), .iA({~add_3_in[26],add_3_in[25:0]}), .iB(27'd33423360), .oSum(y_3_out) );
+    //Stage 4
+    reg [26:0] y_4;
+    //Stage 5
+    reg [26:0] y_5;
+    FpMul s5_mult ( .iA(y_5), .iB(y_3_out), .oProd(oInvSqrt) );
+    
+    always @(posedge iCLK) begin
+    //Stage 1 to 2
+    y_2 <= y_1;
+    mult_2_in <= y_1_out;
+    half_iA_2 <= half_iA_1;
+    //Stage 2 to 3
+    y_3 <= y_2;
+    add_3_in <= y_2_out;
+    //Stage 3 to 4
+    y_4 <= y_3;
+    //Stage 4 to 5
+    y_5 <= y_4;
+    end
+endmodule
 
-// Game state variables for orbital mechanics
-reg [15:0] x, y, vx, vy;
-reg [31:0] rx, ry, r, ax, ay;
-
-// PLL for generating pixel clock (25 MHz)
-pll vga_pll(
-    .inclk0(clock_50),
-    .c0(pixel_clk)
+/**************************************************************************
+ * Floating Point Multiplier                                              *
+ * Combinational                                                          *
+ *************************************************************************/
+module FpMul (
+    input      [26:0] iA,    // First input
+    input      [26:0] iB,    // Second input
+    output     [26:0] oProd  // Product
 );
 
-// Horizontal and vertical counters for VGA
-always @(posedge pixel_clk) begin
-    if (h_counter == H_RES + H_FP + H_PW + H_BP - 1)
-        h_counter <= 0;
-    else
-        h_counter <= h_counter + 1;
+    // Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    wire        B_s;
+    wire [7:0]  B_e;
+    wire [17:0] B_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = {1'b1, iA[17:1]};
+    assign B_s = iB[26];
+    assign B_e = iB[25:18];
+    assign B_f = {1'b1, iB[17:1]};
 
-    if (h_counter == H_RES + H_FP + H_PW + H_BP - 1) begin
-        if (v_counter == V_RES + V_FP + V_PW + V_BP - 1)
-            v_counter <= 0;
-        else
-            v_counter <= v_counter + 1;
-    end
-end
+    // XOR sign bits to determine product sign.
+    wire        oProd_s;
+    assign oProd_s = A_s ^ B_s;
 
-// Compute physics for orbital mechanics
-always @(posedge pixel_clk) begin
-    if (reset_n == 1'b0) begin
-        x <= 16'd300;   // Initial x position
-        y <= 16'd240;   // Initial y position
-        vx <= 16'd0;    // Initial x velocity
-        vy <= 16'd5;    // Initial y velocity
-    end
-    else begin
-        // Calculate radial distance squared (r^2)
-        r <= x * x + y * y;
+    // Multiply the fractions of A and B
+    wire [35:0] pre_prod_frac;
+    assign pre_prod_frac = A_f * B_f;
 
-        // Calculate acceleration components
-        ax <= (G * M * x) / r;
-        ay <= (G * M * y) / r;
+    // Add exponents of A and B
+    wire [8:0]  pre_prod_exp;
+    assign pre_prod_exp = A_e + B_e;
 
-        // Update velocities
-        vx <= vx - (ax / r) * dt;
-        vy <= vy - (ay / r) * dt;
+    // If top bit of product frac is 0, shift left one
+    wire [7:0]  oProd_e;
+    wire [17:0] oProd_f;
+    assign oProd_e = pre_prod_frac[35] ? (pre_prod_exp-9'd126) : (pre_prod_exp - 9'd127);
+    assign oProd_f = pre_prod_frac[35] ? pre_prod_frac[34:17] : pre_prod_frac[33:16];
 
-        // Update positions
-        x <= x + vx * dt;
-        y <= y + vy * dt;
-    end
-end
+    // Detect underflow
+    wire        underflow;
+    assign underflow = pre_prod_exp < 9'h80;
 
-// VGA output control and rendering spaceship position
-assign VGA_R = (h_counter == x && v_counter == y) ? 8'hFF : 8'h00;
-assign VGA_G = (h_counter == x && v_counter == y) ? 8'hFF : 8'h00;
-assign VGA_B = (h_counter == x && v_counter == y) ? 8'hFF : 8'h00;
-assign VGA_HS = (h_counter < H_RES + H_FP || h_counter >= H_RES + H_FP + H_PW) ? 1'b1 : 1'b0;
-assign VGA_VS = (v_counter < V_RES + V_FP || v_counter >= V_RES + V_FP + V_PW) ? 1'b1 : 1'b0;
-assign VGA_CLK = pixel_clk;
-assign VGA_BLANK_N = 1'b1;
-assign VGA_SYNC_N = 1'b0;
+    // Detect zero conditions (either product frac doesn't start with 1, or underflow)
+    assign oProd = underflow        ? 27'b0 :
+                   (B_e == 8'd0)    ? 27'b0 :
+                   (A_e == 8'd0)    ? 27'b0 :
+                   {oProd_s, oProd_e, oProd_f};
 
 endmodule
+
+
+/**************************************************************************
+ * Floating Point Adder                                                   *
+ * 2-stage pipeline                                                       *
+ *************************************************************************/
+module FpAdd (
+    input             iCLK,
+    input      [26:0] iA,
+    input      [26:0] iB,
+    output reg [26:0] oSum
+);
+
+    // Extract fields of A and B.
+    wire        A_s;
+    wire [7:0]  A_e;
+    wire [17:0] A_f;
+    wire        B_s;
+    wire [7:0]  B_e;
+    wire [17:0] B_f;
+    assign A_s = iA[26];
+    assign A_e = iA[25:18];
+    assign A_f = {1'b1, iA[17:1]};
+    assign B_s = iB[26];
+    assign B_e = iB[25:18];
+    assign B_f = {1'b1, iB[17:1]};
+    wire A_larger;
+
+    // Shift fractions of A and B so that they align.
+    wire [7:0]  exp_diff_A;
+    wire [7:0]  exp_diff_B;
+    wire [7:0]  larger_exp;
+    wire [36:0] A_f_shifted;
+    wire [36:0] B_f_shifted;
+
+    assign exp_diff_A = B_e - A_e; // if B bigger
+    assign exp_diff_B = A_e - B_e; // if A bigger
+
+    assign larger_exp = (B_e > A_e) ? B_e : A_e;
+
+    assign A_f_shifted = A_larger             ? {1'b0,  A_f, 18'b0} :
+                         (exp_diff_A > 9'd35) ? 37'b0 :
+                         ({1'b0, A_f, 18'b0} >> exp_diff_A);
+    assign B_f_shifted = ~A_larger            ? {1'b0,  B_f, 18'b0} :
+                         (exp_diff_B > 9'd35) ? 37'b0 :
+                         ({1'b0, B_f, 18'b0} >> exp_diff_B);
+
+    // Determine which of A, B is larger
+    assign A_larger =    (A_e > B_e)                   ? 1'b1  :
+                         ((A_e == B_e) && (A_f > B_f)) ? 1'b1  :
+                         1'b0;
+
+    // Calculate sum or difference of shifted fractions.
+    wire [36:0] pre_sum;
+    assign pre_sum = ((A_s^B_s) &  A_larger) ? A_f_shifted - B_f_shifted :
+                     ((A_s^B_s) & ~A_larger) ? B_f_shifted - A_f_shifted :
+                     A_f_shifted + B_f_shifted;
+
+    // buffer midway results
+    reg  [36:0] buf_pre_sum;
+    reg  [7:0]  buf_larger_exp;
+    reg         buf_A_e_zero;
+    reg         buf_B_e_zero;
+    reg  [26:0] buf_A;
+    reg  [26:0] buf_B;
+    reg         buf_oSum_s;
+    always @(posedge iCLK) begin
+        buf_pre_sum    <= pre_sum;
+        buf_larger_exp <= larger_exp;
+        buf_A_e_zero   <= (A_e == 8'b0);
+        buf_B_e_zero   <= (B_e == 8'b0);
+        buf_A          <= iA;
+        buf_B          <= iB;
+        buf_oSum_s     <= A_larger ? A_s : B_s;
+    end
+
+    // Convert to positive fraction and a sign bit.
+    wire [36:0] pre_frac;
+    assign pre_frac = buf_pre_sum;
+
+    // Determine output fraction and exponent change with position of first 1.
+    wire [17:0] oSum_f;
+    wire [7:0]  shft_amt;
+    assign shft_amt = pre_frac[36] ? 8'd0  : pre_frac[35] ? 8'd1  :
+                      pre_frac[34] ? 8'd2  : pre_frac[33] ? 8'd3  :
+                      pre_frac[32] ? 8'd4  : pre_frac[31] ? 8'd5  :
+                      pre_frac[30] ? 8'd6  : pre_frac[29] ? 8'd7  :
+                      pre_frac[28] ? 8'd8  : pre_frac[27] ? 8'd9  :
+                      pre_frac[26] ? 8'd10 : pre_frac[25] ? 8'd11 :
+                      pre_frac[24] ? 8'd12 : pre_frac[23] ? 8'd13 :
+                      pre_frac[22] ? 8'd14 : pre_frac[21] ? 8'd15 :
+                      pre_frac[20] ? 8'd16 : pre_frac[19] ? 8'd17 :
+                      pre_frac[18] ? 8'd18 : pre_frac[17] ? 8'd19 :
+                      pre_frac[16] ? 8'd20 : pre_frac[15] ? 8'd21 :
+                      pre_frac[14] ? 8'd22 : pre_frac[13] ? 8'd23 :
+                      pre_frac[12] ? 8'd24 : pre_frac[11] ? 8'd25 :
+                      pre_frac[10] ? 8'd26 : pre_frac[9]  ? 8'd27 :
+                      pre_frac[8]  ? 8'd28 : pre_frac[7]  ? 8'd29 :
+                      pre_frac[6]  ? 8'd30 : pre_frac[5]  ? 8'd31 :
+                      pre_frac[4]  ? 8'd32 : pre_frac[3]  ? 8'd33 :
+                      pre_frac[2]  ? 8'd34 : pre_frac[1]  ? 8'd35 :
+                      pre_frac[0]  ? 8'd36 : 8'd37;
+
+    wire [53:0] pre_frac_shft, uflow_shift;
+	 // the shift +1 is because high order bit is not stored, but implied
+    assign pre_frac_shft = {pre_frac, 17'b0} << (shft_amt+1); //? shft_amt+1
+	 assign uflow_shift = {pre_frac, 17'b0} << (shft_amt); //? shft_amt for overflow
+    assign oSum_f = pre_frac_shft[53:36];
+
+    wire [7:0] oSum_e;
+    assign oSum_e = buf_larger_exp - shft_amt + 8'b1;
+
+    // Detect underflow
+    wire underflow;
+	 // this incorrectly sets uflow for 10-10.1
+    //assign underflow = ~oSum_e[7] && buf_larger_exp[7] && (shft_amt != 8'b0);
+	 
+	 // if top bit of matissa is not set, then denorm
+	 assign underflow = ~uflow_shift[53]; 
+	 
+	 always @(posedge iCLK) begin
+			oSum <= (buf_A_e_zero && buf_B_e_zero)    ? 27'b0 :
+                  buf_A_e_zero                     ? buf_B :
+                  buf_B_e_zero                     ? buf_A :
+                  underflow                        ? 27'b0 :
+                  (pre_frac == 0)                  ? 27'b0 :
+                  {buf_oSum_s, oSum_e, oSum_f};
+	 end //output update
+endmodule
+
