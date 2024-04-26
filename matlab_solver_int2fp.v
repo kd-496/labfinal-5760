@@ -5,12 +5,10 @@ module Orbital_Path (
     output reg [31:0] Y  // Y position output
 );
 
-
 // Constants and initial conditions
 parameter G = 32'h0000005D;  // Gravitational constant in m^3 kg^-1 s^-2 (6.67430e-11)
 parameter M = 32'h00000005;  // Mass of Earth in kg (5.972e24)
-parameter dt = 10;           // Time step in seconds
-
+parameter DT = 32'h0000000A;  // Time step in seconds
 
 // Initial position and velocity (floating-point format)
 reg signed [15:0] x_fp, y_fp, vx_fp, vy_fp;
@@ -26,20 +24,6 @@ Fp2Int fp2int_x (.iA(x_fp), .oInteger(x_int));
 Fp2Int fp2int_y (.iA(y_fp), .oInteger(y_int));
 Fp2Int fp2int_vx (.iA(vx_fp), .oInteger(vx_int));
 Fp2Int fp2int_vy (.iA(vy_fp), .oInteger(vy_int));
-
-
-// Other declarations...
-reg [7:0] steps;  // Number of steps for simulation
-reg [31:0] r, ax, ay; // Radial distance and acceleration components
-reg [31:0] i; // Loop counter
-wire [31:0] inv_radius;
-wire [31:0] r_squared;
-wire [31:0] x_fp_squared;
-wire [31:0] y_fp_squared;
-inv_radius_squared;
-inv_radius_cubed;
-prod_x;
-prod_y;
 
 // Euler's method to update position and velocity
 always @(posedge clk) begin
@@ -58,29 +42,37 @@ always @(posedge clk) begin
         int2fp_vx.iInteger <= vx_int;
         int2fp_vy.iInteger <= vy_int;
     end else begin
-	 //Module Instantiation
-	 // Calculate radial distance
-	 FpMul x_displacement_square_calc(.iA(x_fp), .iB(x_fp), .oProd(x_fp_squared));
-    FpMul y_displacement_square_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
-	 FpAdd r_squared_calc( .iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
-	 FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk),.iA(r_squared),.oInvSqrt(inv_radius));
-	 
-       // r <= $signed(sqrt(x_fp*x_fp + y_fp*y_fp));
-        // Calculate acceleration components
-	FpMul inv_radius_squared_calc(.iA(inv_radius), .iB(inv_radius), .oProd(inv_radius_squared));
-	FpMul inv_radius_cubed_calc(.iA(inv_radius_squared), .iB(inv_radius), .oProd(inv_radius_cubed));
-	FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
-	FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
+        // Calculate radial distance
+        wire [31:0] r, r_squared;
+        FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(r_squared));
+        FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
+        FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
+        FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
       
-		  ax <= -G * M * prod_x;
-        ay <= -G * M * prod_y;
+        // Calculate acceleration components
+        wire [31:0] ax, ay;
+        FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
+        FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
+        FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
+        FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
+        FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
+        FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
+      
         // Update velocities
-        vx_fp <= vx_fp + ax * dt;
-        vy_fp <= vy_fp + ay * dt;
+        wire [31:0] dvx, dvy;
+        FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
+        FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
+        FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp), .iB(dvx), .oSum(vx_fp));
+        FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp), .iB(dvy), .oSum(vy_fp));
+        
         // Update positions
-        x_fp <= x_fp + vx_fp * dt;
-        y_fp <= y_fp + vy_fp * dt;
-        // Conversion from integer to floating-point
+        wire [31:0] dx, dy;
+        FpMul vx_dt_calc(.iA(vx_fp), .iB(DT), .oProd(dx));
+        FpMul vy_dt_calc(.iA(vy_fp), .iB(DT), .oProd(dy));
+        FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp), .iB(dx), .oSum(x_fp));
+        FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp), .iB(dy), .oSum(y_fp));
+        
+        // Conversion from floating-point to integer
         int2fp_x.iInteger <= x_int;
         int2fp_y.iInteger <= y_int;
         int2fp_vx.iInteger <= vx_int;
@@ -88,4 +80,4 @@ always @(posedge clk) begin
     end
 end
 
-// Include the floating-point modules here (Int2Fp, Fp2Int, FpShift, FpNegate, FpAbs, FpCompare, FpInvSqrt, FpMul, FpAdd)
+endmodule
