@@ -1,4 +1,3 @@
-
 module Orbital_Path (
     input clk,           // Clock input
     input rst,           // Reset input
@@ -26,76 +25,54 @@ Fp2Int fp2int_y (.iA(y_fp), .oInteger(y_int));
 Fp2Int fp2int_vx (.iA(vx_fp), .oInteger(vx_int));
 Fp2Int fp2int_vy (.iA(vy_fp), .oInteger(vy_int));
 
-// Euler's method to update position and velocity
-always @(posedge clk) begin
-    if (rst) begin
-        x_fp <= $signed(32'h00026F90); // Reset x position in floating-point format
-        y_fp <= 32'h00000000;          // Reset y position in floating-point format
-        vx_fp <= 32'h00000000;         // Reset x velocity in floating-point format
-        vy_fp <= $signed(sqrt(G * M / x_fp)); // Circular orbit velocity in floating-point format
-        x_int <= 6.371e6 + 400000;     // Reset x position in integer format
-        y_int <= 0;                     // Reset y position in integer format
-        vx_int <= 0;                   // Reset x velocity in integer format
-        vy_int <= sqrt(G * M / x_int); // Circular orbit velocity in integer format
-        // Conversion from integer to floating-point
-        int2fp_x.iInteger <= x_int;
-        int2fp_y.iInteger <= y_int;
-        int2fp_vx.iInteger <= vx_int;
-        int2fp_vy.iInteger <= vy_int;
-    end else begin
-        // Calculate radial distance
-        wire [31:0] r, r_squared;
-        FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(r_squared));
-        FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
-        FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
-        FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
-      
-        // Calculate acceleration components
-        wire [31:0] ax, ay;
-        FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
-        FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
-        FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
-        FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
-        FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
-        FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
-      
-        // Update velocities
-        wire [31:0] dvx, dvy;
-        FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
-        FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
-        FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp), .iB(dvx), .oSum(vx_fp));
-        FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp), .iB(dvy), .oSum(vy_fp));
-        
-        // Update positions
-        wire [31:0] dx, dy;
-        FpMul vx_dt_calc(.iA(vx_fp), .iB(DT), .oProd(dx));
-        FpMul vy_dt_calc(.iA(vy_fp), .iB(DT), .oProd(dy));
-        FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp), .iB(dx), .oSum(x_fp));
-        FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp), .iB(dy), .oSum(y_fp));
-        
-        // Conversion from floating-point to integer
-        int2fp_x.iInteger <= x_int;
-        int2fp_y.iInteger <= y_int;
-        int2fp_vx.iInteger <= vx_int;
-        int2fp_vy.iInteger <= vy_int;
-    end
-end
-
-
 // Other declarations...
-reg [31:0] X_array[0:steps-1]; // Array for storing X positions
-reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
-reg [31:0] T;  // Total time in seconds (1 hour)
-
+reg [7:0] steps;  // Number of steps for simulation
+reg [31:0] i; // Loop counter
 
 // Simulation time
 always @(posedge clk) begin
     if (rst) begin
-        steps <= T / dt; // Calculate number of steps for simulation
-        i <= 0; // Initialize loop counter
+        // Set initial conditions
+        x_fp <= $signed(32'h00026F90); // Initial x position in floating-point format
+        y_fp <= 32'h00000000;          // Initial y position in floating-point format
+        vx_fp <= 32'h00000000;         // Initial x velocity in floating-point format
+        vy_fp <= $signed(sqrt(G * M / x_fp)); // Initial y velocity in floating-point format
+        x_int <= 6.371e6 + 400000;     // Initial x position in integer format
+        y_int <= 0;                     // Initial y position in integer format
+        vx_int <= 0;                   // Initial x velocity in integer format
+        vy_int <= sqrt(G * M / x_int); // Initial y velocity in integer format
+        steps <= T / DT;               // Calculate number of steps for simulation
+        i <= 0;                        // Initialize loop counter
     end else begin
-        // Store positions for plotting
+        // Euler's method to update position and velocity
         if (i < steps) begin
+            // Calculate radial distance
+            wire [31:0] r_squared;
+            FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(r_squared));
+            FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
+            FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
+            FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
+            // Calculate acceleration components
+            wire [31:0] ax, ay;
+            FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
+            FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
+            FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
+            FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
+            FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
+            FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
+            // Update velocities
+            wire [31:0] dvx, dvy;
+            FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
+            FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
+            FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp), .iB(dvx), .oSum(vx_fp));
+            FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp), .iB(dvy), .oSum(vy_fp));
+            // Update positions
+            wire [31:0] dx, dy;
+            FpMul vx_dt_calc(.iA(vx_fp), .iB(DT), .oProd(dx));
+            FpMul vy_dt_calc(.iA(vy_fp), .iB(DT), .oProd(dy));
+            FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp), .iB(dx), .oSum(x_fp));
+            FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp), .iB(dy), .oSum(y_fp));
+            // Store positions for plotting
             X_array[i] <= x_int;
             Y_array[i] <= y_int;
             i <= i + 1;
@@ -103,8 +80,6 @@ always @(posedge clk) begin
     end
 end
 
-
-// Other calculations...
 // Plotting the orbit
 always @(posedge clk) begin
     if (rst) begin
@@ -118,5 +93,9 @@ always @(posedge clk) begin
     end
 end
 
+// Array for storing X and Y positions
+reg [31:0] X_array[0:steps-1]; // Array for storing X positions
+reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
+reg [31:0] T;  // Total time in seconds (1 hour)
 
 endmodule
