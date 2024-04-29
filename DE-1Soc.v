@@ -372,6 +372,12 @@ HexDigit Digit1(HEX1, hex3_hex0[7:4]);
 HexDigit Digit2(HEX2, hex3_hex0[11:8]);
 HexDigit Digit3(HEX3, hex3_hex0[15:12]);
 
+
+//Orbital Path lines
+wire [9:0] orbital_x;
+wire [9:0] orbital_y;
+wire reset;
+
 // VGA clock and reset lines
 wire vga_pll_lock ;
 wire vga_pll ;
@@ -436,23 +442,23 @@ end
 
 
 //Instantiate Orbital Path block
-Orbital_Path ( .clk ( ), .rst ( ), .X ( ), .Y( ));
+Orbital_Path ( .clk(clk), .rst(rst), .X(orbital_x), .Y(orbital_y));
 
 // Instantiate memory
-M10K_1000_8 pixel_data( .q(M10k_out), // contains pixel color (8 bit) for display
-								.d(write_data),
-								.write_address(write_address),
-								.read_address((19'd_640*next_y) + next_x),
-								.we(write_enable),
-								.clk(M10k_pll)
-);
+//M10K_1000_8 pixel_data( .q(M10k_out), // contains pixel color (8 bit) for display
+//								.d(write_data),
+//								.write_address(write_address),
+//								.read_address((19'd_640*next_y) + next_x),
+//								.we(write_enable),
+//								.clk(M10k_pll)
+//);
 
 // Instantiate VGA driver					
 vga_driver DUT   (	.clock(vga_pll), 
 							.reset(vga_reset),
-							.color_in(M10k_out),	// Pixel color (8-bit) from memory
-							.next_x(next_x),		// This (and next_y) used to specify memory read address
-							.next_y(next_y),		// This (and next_x) used to specify memory read address
+							.color_in(color_in),	// Pixel color (8-bit) from memory
+							.next_x(orbital_x),		// This (and next_y) used to specify memory read address
+							.next_y(orbital_y),		// This (and next_x) used to specify memory read address
 							.hsync(VGA_HS),
 							.vsync(VGA_VS),
 							.red(VGA_R),
@@ -463,6 +469,9 @@ vga_driver DUT   (	.clock(vga_pll),
 							.blank(VGA_BLANK_N)
 );
 
+ //assign color_in = (reset) ? 8'b00000000 : 8'b11111111; 
+
+assign color_in = (orbital_x && orbital_y)? 8'b11111111 : 8'b00000000;
 
 //=======================================================
 //  Structural coding
@@ -589,86 +598,93 @@ Computer_System The_System (
 );
 endmodule // end top level
 
-
 module Orbital_Path (
     input clk,           // Clock input
     input rst,           // Reset input
-    output reg [31:0] X, // X position output
-    output reg [31:0] Y  // Y position output
+    output reg [26:0] X, // X position output
+    output reg [26:0] Y  // Y position output
 );
 
 // Constants and initial conditions
-parameter G = 32'h0000005D;  // Gravitational constant in m^3 kg^-1 s^-2 (6.67430e-11)
-parameter M = 32'h00000005;  // Mass of Earth in kg (5.972e24)
-parameter DT = 32'h0000000A;  // Time step in seconds
+parameter G = 27'h0000005D;  // Gravitational constant in m^3 kg^-1 s^-2 (6.67430e-11)
+parameter M = 27'h00000005;  // Mass of Earth in kg (5.972e24)
+parameter DT = 27'h0000000A;  // Time step in seconds
 parameter T = 3600;           // Total time in seconds (1 hour)
+parameter steps = 10;
 
-// Initial position and velocity (floating-point format)
-reg signed [15:0] x_fp, y_fp, vx_fp, vy_fp;
-// Initial position and velocity (integer format)
-reg [31:0] x_int, y_int, vx_int, vy_int;
-// Conversion from floating-point to integer
+// Declare signals for calculations
+wire [26:0] r_squared, r;
+wire [26:0] ax, ay, inv_radius_squared, inv_radius, prod_x, prod_y;
+wire [26:0] dvx, dvy, dx, dy;
+
+wire [26:0] x_fp, y_fp, x_int, y_int, vx_fp, vy_fp, vx_int, vy_int;
+reg [26:0] x_fp_reg, y_fp_reg, vx_fp_reg, vy_fp_reg;
+
+// Convert floating-point to integer and vice versa
 Int2Fp int2fp_x (.iInteger(x_int), .oA(x_fp));
 Int2Fp int2fp_y (.iInteger(y_int), .oA(y_fp));
 Int2Fp int2fp_vx (.iInteger(vx_int), .oA(vx_fp));
 Int2Fp int2fp_vy (.iInteger(vy_int), .oA(vy_fp));
-// Conversion from integer to floating-point
-Fp2Int fp2int_x (.iA(x_fp), .oInteger(x_int));
-Fp2Int fp2int_y (.iA(y_fp), .oInteger(y_int));
-Fp2Int fp2int_vx (.iA(vx_fp), .oInteger(vx_int));
-Fp2Int fp2int_vy (.iA(vy_fp), .oInteger(vy_int));
+
+Fp2Int fp2int_x (.iA(x_fp_reg), .oInteger(x_int));
+Fp2Int fp2int_y (.iA(y_fp_reg), .oInteger(y_int));
+Fp2Int fp2int_vx (.iA(vx_fp_reg), .oInteger(vx_int));
+Fp2Int fp2int_vy (.iA(vy_fp_reg), .oInteger(vy_int));
+
+// Perform calculations //x, y square
+FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(x_fp_squared));
+FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
+//radius and inv
+FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));  //which clock?
+FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
+FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
+FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
+//acceleration
+FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x)); // cos
+FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y)); // sin
+FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
+FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
+FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
+FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
+//velocities
+FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp_reg), .iB(dvx), .oSum(vx_fp_wire));  //which clock?
+FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp_reg), .iB(dvy), .oSum(vy_fp_wire));
+FpMul vx_dt_calc(.iA(vx_fp_reg), .iB(DT), .oProd(dx));
+FpMul vy_dt_calc(.iA(vy_fp_reg), .iB(DT), .oProd(dy));
+FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp_reg), .iB(dx), .oSum(x_fp_wire)); //which clock?
+FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp_reg), .iB(dy), .oSum(y_fp_wire));
 
 // Other declarations...
-reg [7:0] steps;  // Number of steps for simulation
-reg [31:0] i; // Loop counter
+//reg [7:0] steps;  // Number of steps for simulation
+reg [26:0] i; // Loop counter
 
 // Array for storing X and Y positions
-reg [31:0] X_array[0:steps-1]; // Array for storing X positions
-reg [31:0] Y_array[0:steps-1]; // Array for storing Y positions
+reg [26:0] X_array[0:steps-1]; // Array for storing X positions
+reg [26:0] Y_array[0:steps-1]; // Array for storing Y positions
 
 // Simulation time
 always @(posedge clk) begin
     if (rst) begin
         // Set initial conditions
-        x_fp <= $signed(32'h00026F90); // Initial x position in floating-point format
-        y_fp <= 32'h00000000;          // Initial y position in floating-point format
-        vx_fp <= 32'h00000000;         // Initial x velocity in floating-point format
-        vy_fp <= $signed(sqrt(G * M / x_fp)); // Initial y velocity in floating-point format
-        x_int <= 6.371e6 + 400000;     // Initial x position in integer format
-        y_int <= 0;                     // Initial y position in integer format
-        vx_int <= 0;                   // Initial x velocity in integer format
-        vy_int <= sqrt(G * M / x_int); // Initial y velocity in integer format
-        steps <= T / DT;               // Calculate number of steps for simulation
+        x_fp_reg <= $signed(27'h00026F90); // Initial x position in floating-point format
+        y_fp_reg <= 27'h00000000;          // Initial y position in floating-point format
+        vx_fp_reg <= 27'h00000000;         // Initial x velocity in floating-point format
+        //vy_fp_reg <= $signed($sqrt(G * M / (27'h00026F90))); // Initial y velocity in floating-point format
+        vy_fp_reg <= 27'd7900;                                 //first cosmic velocity is a constant, we don not need to calc sqrt fot initial
+        //x_int <= 6.371e6 + 400000;     // Initial x position in integer format
+        //y_int <= 0;                     // Initial y position in integer format
+        //vx_int <= 0;                   // Initial x velocity in integer format
+        //vy_int <= sqrt(G * M / x_int); // Initial y velocity in integer format
+        //steps <= T / DT;               // Calculate number of steps for simulation
         i <= 0;                        // Initialize loop counter
     end else begin
         // Euler's method to update position and velocity
         if (i < steps) begin
-            // Calculate radial distance
-            wire [31:0] r_squared;
-            FpMul x_fp_squared_calc(.iA(x_fp), .iB(x_fp), .oProd(x_fp_squared));
-            FpMul y_fp_squared_calc(.iA(y_fp), .iB(y_fp), .oProd(y_fp_squared));
-            FpAdd r_squared_calc(.iCLK(clk), .iA(x_fp_squared), .iB(y_fp_squared), .oSum(r_squared));
-            FpInvSqrt inv_sqrt_r_squared_calc(.iCLK(clk), .iA(r_squared), .oInvSqrt(r));
-            // Calculate acceleration components
-            wire [31:0] ax, ay, inv_radius_squared, inv_radius, prod_x, prod_y;
-            FpMul inv_radius_cubed_calc(.iA(r), .iB(r), .oProd(inv_radius_squared));
-            FpMul inv_radius_calc(.iA(inv_radius_squared), .iB(r), .oProd(inv_radius));
-            FpMul prod_x_calc(.iA(x_fp), .iB(inv_radius_cubed), .oProd(prod_x));
-            FpMul prod_y_calc(.iA(y_fp), .iB(inv_radius_cubed), .oProd(prod_y));
-            FpMul ax_calc(.iA(prod_x), .iB(G * M), .oProd(ax));
-            FpMul ay_calc(.iA(prod_y), .iB(G * M), .oProd(ay));
-            // Update velocities
-            wire [31:0] dvx, dvy;
-            FpMul ax_dt_calc(.iA(ax), .iB(DT), .oProd(dvx));
-            FpMul ay_dt_calc(.iA(ay), .iB(DT), .oProd(dvy));
-            FpAdd vx_fp_calc(.iCLK(clk), .iA(vx_fp), .iB(dvx), .oSum(vx_fp));
-            FpAdd vy_fp_calc(.iCLK(clk), .iA(vy_fp), .iB(dvy), .oSum(vy_fp));
-            // Update positions
-            wire [31:0] dx, dy;
-            FpMul vx_dt_calc(.iA(vx_fp), .iB(DT), .oProd(dx));
-            FpMul vy_dt_calc(.iA(vy_fp), .iB(DT), .oProd(dy));
-            FpAdd x_fp_calc(.iCLK(clk), .iA(x_fp), .iB(dx), .oSum(x_fp));
-            FpAdd y_fp_calc(.iCLK(clk), .iA(y_fp), .iB(dy), .oSum(y_fp));
+            //iteration
+            x_fp_reg <= x_fp_wire;
+            y_fp_reg <= y_fp_wire;
+            vx_fp_reg <= vx_fp_wire;
+            vy_fp_reg <= vy_fp_wire;
             // Store positions for plotting
             X_array[i] <= x_int;
             Y_array[i] <= y_int;
@@ -691,7 +707,6 @@ always @(posedge clk) begin
 end
 
 endmodule
-
 
 // Declaration of module, include width and signedness of each input/output
 module vga_driver (
