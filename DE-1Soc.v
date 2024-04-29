@@ -374,8 +374,8 @@ HexDigit Digit3(HEX3, hex3_hex0[15:12]);
 
 
 //Orbital Path lines
-wire [9:0] orbital_x;
-wire [9:0] orbital_y;
+wire [26:0] orbital_x;
+wire [26:0] orbital_y;
 wire reset;
 
 // VGA clock and reset lines
@@ -470,8 +470,11 @@ vga_driver DUT   (	.clock(vga_pll),
 );
 
  //assign color_in = (reset) ? 8'b00000000 : 8'b11111111; 
+wire [9:0] scaled_orbital_x = orbital_x[21:12];
+wire [8:0] scaled_orbital_y = orbital_y[20:12];
 
-assign color_in = ((next_x == orbital_x) && (next_y == orbital_y))? 8'b11111111 : 8'b00000000;
+
+assign color_in = ((next_x == scaled_orbital_x[9:0]) && (next_y == scaled_orbital_y[8:0]))? 8'b11111111 : 8'b00000000;
 
 //=======================================================
 //  Structural coding
@@ -1374,4 +1377,3 @@ module FpAdd (
                   {buf_oSum_s, oSum_e, oSum_f};
 	 end //output update
 endmodule
-
