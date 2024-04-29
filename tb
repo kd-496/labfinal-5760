@@ -1,0 +1,45 @@
+`timescale 1ns / 1ps
+
+module orbital_path_tb;
+
+reg clk;
+reg rst;
+wire [26:0] X, Y;
+
+// Instantiate the Orbital_Path module
+Orbital_Path uut (
+    .clk(clk),
+    .rst(rst),
+    .X(X),
+    .Y(Y)
+);
+
+// Clock generation
+initial begin
+    clk = 0;
+    forever #10 clk = ~clk;  // Generate a 50 MHz clock
+end
+
+// Test sequence
+initial begin
+    rst = 1;
+    #100;    // Assert reset for 100 ns
+    rst = 0;
+    
+    // Let the module run for a certain period
+    #100000; // Run simulation for enough time to observe behavior
+
+    // Specific checks for orbital coordinates
+    // Hypothetical check assuming the orbit should return to starting position
+    // Let's assume the starting position should be at coordinates (1000, 0)
+    #200000; // Wait for a period corresponding to one complete orbit cycle
+    if (X !== 27'h3E8 || Y !== 27'h0) begin
+        $display("Error: Expected values not met at %t. Expected (1000, 0), got (%d, %d)", $time, X, Y);
+    end else begin
+        $display("Test passed: Correct values received at %t", $time);
+    end
+
+    $finish; // End simulation
+end
+
+endmodule
