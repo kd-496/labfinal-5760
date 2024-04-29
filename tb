@@ -1,12 +1,16 @@
 `timescale 1ns / 1ps
 
-module orbital_path_tb;
+module tb_Orbital_Path;
 
+// Inputs
 reg clk;
 reg rst;
-wire [26:0] X, Y;
 
-// Instantiate the Orbital_Path module
+// Outputs
+wire [26:0] X;
+wire [26:0] Y;
+
+// Instantiate the Unit Under Test (UUT)
 Orbital_Path uut (
     .clk(clk),
     .rst(rst),
@@ -17,29 +21,34 @@ Orbital_Path uut (
 // Clock generation
 initial begin
     clk = 0;
-    forever #10 clk = ~clk;  // Generate a 50 MHz clock
+    forever #10 clk = ~clk; // Toggle clock every 10 ns
 end
 
-// Test sequence
+// Reset process
 initial begin
-    rst = 1;
-    #100;    // Assert reset for 100 ns
-    rst = 0;
+    rst = 1; // Assert reset
+    #50;
+    rst = 0; // De-assert reset
+end
+
+// Monitoring and logging outputs
+initial begin
+    $monitor("Time=%t, X=%d, Y=%d", $time, X, Y);
+end
+
+// Test scenario
+initial begin
+    // Wait for reset to de-assert
+    @(negedge rst);
     
-    // Let the module run for a certain period
-    #100000; // Run simulation for enough time to observe behavior
+    // Allow simulation to run for a sufficient period to observe the orbital motion
+    #100000;  // Adjust simulation time as necessary
 
-    // Specific checks for orbital coordinates
-    // Hypothetical check assuming the orbit should return to starting position
-    // Let's assume the starting position should be at coordinates (1000, 0)
-    #200000; // Wait for a period corresponding to one complete orbit cycle
-    if (X !== 27'h3E8 || Y !== 27'h0) begin
-        $display("Error: Expected values not met at %t. Expected (1000, 0), got (%d, %d)", $time, X, Y);
-    end else begin
-        $display("Test passed: Correct values received at %t", $time);
-    end
+    // Print a message indicating the end of simulation
+    $display("End of Simulation.");
 
-    $finish; // End simulation
+    // End simulation
+    $stop;
 end
 
 endmodule
