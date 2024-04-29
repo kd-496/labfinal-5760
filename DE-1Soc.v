@@ -457,8 +457,8 @@ Orbital_Path ( .clk(clk), .rst(rst), .X(orbital_x), .Y(orbital_y));
 vga_driver DUT   (	.clock(vga_pll), 
 							.reset(vga_reset),
 							.color_in(color_in),	// Pixel color (8-bit) from memory
-							.next_x(orbital_x),		// This (and next_y) used to specify memory read address
-							.next_y(orbital_y),		// This (and next_x) used to specify memory read address
+							.next_x(next_x),		// This (and next_y) used to specify memory read address
+							.next_y(next_y),		// This (and next_x) used to specify memory read address
 							.hsync(VGA_HS),
 							.vsync(VGA_VS),
 							.red(VGA_R),
@@ -471,7 +471,7 @@ vga_driver DUT   (	.clock(vga_pll),
 
  //assign color_in = (reset) ? 8'b00000000 : 8'b11111111; 
 
-assign color_in = (orbital_x && orbital_y)? 8'b11111111 : 8'b00000000;
+assign color_in = ((next_x == orbital_x) && (next_y == orbital_y))? 8'b11111111 : 8'b00000000;
 
 //=======================================================
 //  Structural coding
