@@ -1,54 +1,111 @@
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "system.h"  // Assuming a system header file with FPGA base addresses
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <math.h>
 
-#define G 6.67430e-11
-#define M 5.972e24
-#define dt 1
+// Constants for the orbital simulation
+#define G 6.67430e-11  // Gravitational constant in m^3 kg^-1 s^-2
+#define M 5.972e24     // Mass of Earth in kg
+#define dt 10          // Time step in seconds
 
-// Assuming memory-mapped I/O addresses for the VGA controller
-#define VGA_CTRL_BASE 0xFF200000  // Base address for VGA controller
-#define VGA_PIXEL_X_REG (VGA_CTRL_BASE + 0x00)  // X-coordinate
-#define VGA_PIXEL_Y_REG (VGA_CTRL_BASE + 0x04)  // Y-coordinate
-#define VGA_PIXEL_COLOR_REG (VGA_CTRL_BASE + 0x08)  // Color
+// VGA display settings
+#define SDRAM_BASE 0xC0000000
+#define FPGA_CHAR_BASE 0xC9000000
+#define HW_REGS_BASE 0xff200000
+#define HW_REGS_SPAN 0x00005000
+#define VGA_BASE 0xC0000000  // Change this to your actual framebuffer base address
+#define VGA_WIDTH 640
+#define VGA_HEIGHT 480
 
-void write_pixel(int x, int y, unsigned int color) {
-    *(volatile unsigned int *)(VGA_PIXEL_X_REG) = x;
-    *(volatile unsigned int *)(VGA_PIXEL_Y_REG) = y;
-    *(volatile unsigned int *)(VGA_PIXEL_COLOR_REG) = color;
-}
+// Address mappings
+void *h2p_lw_virtual_base;
+volatile unsigned int *vga_pixel_ptr = NULL;
+int fd;
 
-int main() {
-    double x = 6.371e6 + 400000;  // Initial x position
-    double y = 0;                 // Initial y position
-    double eccentricity = 0.1;
-    double perigee_velocity = sqrt((G * M * (1 + eccentricity)) / (x * (1 - eccentricity)));
+// Function prototypes for graphics
+void VGA_pixel(int x, int y, short color);
+void clear_screen();
+
+int main(void) {
+    // Open /dev/mem
+    if ((fd = open("/dev/mem", (O_RDWR | O_SYNC))) == -1) {
+        printf("ERROR: could not open \"/dev/mem\"...\n");
+        return (1);
+    }
+
+    // Map FPGA space
+    h2p_lw_virtual_base = mmap(NULL, HW_REGS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, HW_REGS_BASE);
+    if (h2p_lw_virtual_base == MAP_FAILED) {
+        printf("ERROR: mmap() failed...\n");
+        close(fd);
+        return (1);
+    }
+
+    // Initialize pointers to VGA pixel buffer
+    vga_pixel_ptr = (unsigned int *)(h2p_lw_virtual_base);
+
+    // Clear the screen
+    clear_screen();
+
+    // Initial conditions for the orbit
+    double x = 6.371e6 + 400000;  // Earth radius + altitude of 400 km
+    double y = 0;
     double vx = 0;
-    double vy = perigee_velocity;
+    double vy = sqrt(G * M / x);  // Initial velocity for circular orbit
+    double ax, ay, r;
 
-    int screen_x, screen_y;
-    int center_x = 320; // Assuming a 640x480 screen
-    int center_y = 240;
-    double scale = 0.00001; // Scale to fit the orbit on the screen
+    // Convert meters to pixels (scaling factor for visualization)
+    double scale = 0.00005;  // Adjust scale for your display resolution and desired orbit size
+
+    int px, py;  // Screen coordinates
 
     while (1) {
-        double r = sqrt(x * x + y * y);
-        double ax = -G * M * x / (r * r * r);
-        double ay = -G * M * y / (r * r * r);
+        // Compute the radial distance
+        r = sqrt(x * x + y * y);
+
+        // Compute acceleration components
+        ax = -G * M * x / (r * r * r);
+        ay = -G * M * y / (r * r * r);
+
+        // Update velocity
         vx += ax * dt;
         vy += ay * dt;
+
+        // Update position
         x += vx * dt;
         y += vy * dt;
 
-        // Convert simulation coordinates to VGA screen coordinates
-        screen_x = center_x + (int)(x * scale);
-        screen_y = center_y - (int)(y * scale); // Inverting y for VGA screen
+        // Convert to screen coordinates
+        px = (int)(x * scale) + 320;  // Center on the screen horizontally
+        py = (int)(y * scale) + 240;  // Center on the screen vertically
 
-        // Write the new position to the VGA
-        write_pixel(screen_x, screen_y, 0xFFFFFF); // Drawing in white
+        // Draw the new position
+        clear_screen();  // Clear the previous position
+        VGA_pixel(px, py, 0xffff);  // Draw new position
 
-        // Insert a delay or synchronization mechanism here if necessary
+        usleep(50000);  // Delay for visibility
     }
+
+    close(fd);
     return 0;
+}
+
+
+
+void VGA_pixel(int x, int y, short color) {
+    if (x >= 0 && x < VGA_WIDTH && y >= 0 && y < VGA_HEIGHT) {
+        volatile short *pixel_addr = (volatile short *)(VGA_BASE + (y * VGA_WIDTH + x) * 2);
+        *pixel_addr = color;
+    }
+}
+
+
+void clear_screen() {
+    for (int y = 0; y < VGA_HEIGHT; y++) {
+        for (int x = 0; x < VGA_WIDTH; x++) {
+            VGA_pixel(x, y, 0x0000);  // Black color
+        }
+    }
 }
