@@ -21,6 +21,18 @@ steps = T / dt;
 X = zeros(1, steps);
 Y = zeros(1, steps);
 
+% Setting up the plot
+figure;
+hold on;
+axis equal;
+grid on;
+title('Elliptical Orbital Path of a Spacecraft');
+xlabel('X Position (m)');
+ylabel('Y Position (m)');
+plotEarth = plot(0, 0, 'o', 'MarkerFaceColor', 'b', 'MarkerSize', 10); % Earth at the origin
+pathPlot = plot(X, Y, 'r'); % Path of the orbit
+particlePlot = plot(x, y, 'ko', 'MarkerFaceColor', 'k'); % Particle representing the spacecraft
+
 % Euler's method to update position and velocity
 for i = 1:steps
     % Store positions for plotting
@@ -41,13 +53,9 @@ for i = 1:steps
     % Update positions
     x = x + vx * dt;
     y = y + vy * dt;
+    
+    % Update plot
+    set(pathPlot, 'XData', X, 'YData', Y);
+    set(particlePlot, 'XData', x, 'YData', y);
+    drawnow; % Update the plot
 end
-
-% Plotting the orbit
-figure;
-plot(X, Y);
-axis equal;
-title('Elliptical Orbital Path of a Spacecraft');
-xlabel('X Position (m)');
-ylabel('Y Position (m)');
-grid on;
