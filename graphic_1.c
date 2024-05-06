@@ -181,7 +181,7 @@ int main(void)
     double ax, ay, r;
 
     // Convert meters to pixels (scaling factor for visualization)
-    double scale = 0.00001;  // Adjust scale for your display resolution and desired orbit size
+    double scale = 0.000001;  // Adjust scale for your display resolution and desired orbit size
 
     int px, py;  // Screen coordinates
 
