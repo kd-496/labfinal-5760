@@ -27,6 +27,8 @@
 #define white       (0xffff)
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
+#define blue        (31+(0<<5)+(0<<11))
+#define magenta     (31+(0<<5)+(31<<11))
 
 #define PLAYER_SIZE 10
 #define BULLET_SIZE 4
@@ -70,7 +72,7 @@ void *vga_char_virtual_base;
 int fd;
 struct termios old_tio, new_tio;
 char key_pressed = '\0';
-Particle player, enemy1, enemy2;
+Particle player, enemies[4]; // Array to hold multiple enemies
 Bullet bullets[10];
 
 void init_bullet(Bullet *b, int x, int y, int color) {
@@ -105,20 +107,15 @@ void move_bullets() {
 }
 
 void detect_collision() {
-    for (int i = 0; i < 10; i++) {
-        if (bullets[i].active) {
-            if (enemy1.active && bullets[i].x >= enemy1.px - enemy1.size && bullets[i].x <= enemy1.px + enemy1.size &&
-                bullets[i].y >= enemy1.py - enemy1.size && bullets[i].y <= enemy1.py + enemy1.size) {
-                enemy1.active = 0;
-                bullets[i].active = 0;
-                VGA_disc(enemy1.px, enemy1.py, enemy1.size, black);
-            }
-
-            if (enemy2.active && bullets[i].x >= enemy2.px - enemy2.size && bullets[i].x <= enemy2.px + enemy2.size &&
-                bullets[i].y >= enemy2.py - enemy2.size && bullets[i].y <= enemy2.py + enemy2.size) {
-                enemy2.active = 0;
-                bullets[i].active = 0;
-                VGA_disc(enemy2.px, enemy2.py, enemy2.size, black);
+    for (int b = 0; b < 10; b++) {
+        if (bullets[b].active) {
+            for (int e = 0; e < 4; e++) {
+                if (enemies[e].active && bullets[b].x >= enemies[e].px - enemies[e].size && bullets[b].x <= enemies[e].px + enemies[e].size &&
+                    bullets[b].y >= enemies[e].py - enemies[e].size && bullets[b].y <= enemies[e].py + enemies[e].size) {
+                    enemies[e].active = 0;
+                    bullets[b].active = 0;
+                    VGA_disc(enemies[e].px, enemies[e].py, enemies[e].size, black);
+                }
             }
         }
     }
@@ -253,8 +250,10 @@ int main(void) {
 
     double scale = 0.000001;
     init_particle(&player, 0, scale, green, PLAYER_SIZE, 320, 440, 0); // Place player at the bottom center
-    init_particle(&enemy1, 400000, scale, yellow, 12, 200, 240, 50);  // Different center and radius
-    init_particle(&enemy2, 800000, scale, cyan, 12, 400, 240, 100);  // Different center and radius
+    init_particle(&enemies[0], 400000, scale, yellow, 12, 200, 240, 50); // Enemy1
+    init_particle(&enemies[1], 800000, scale, cyan, 12, 400, 240, 100); // Enemy2
+    init_particle(&enemies[2], 600000, scale, blue, 15, 100, 120, 75);  // Enemy3
+    init_particle(&enemies[3], 700000, scale, magenta, 15, 500, 360, 60); // Enemy4
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
 
@@ -272,8 +271,9 @@ int main(void) {
 
     while (1) {
         update_player_position();
-        update_particle_orbit(&enemy1, 0.05);  // Adjust dt for orbital motion
-        update_particle_orbit(&enemy2, 0.05);  // Adjust dt for orbital motion
+        for (int i = 0; i < 4; i++) {
+            update_particle_orbit(&enemies[i], 0.05);  // Adjust dt for orbital motion
+        }
         move_bullets();
         detect_collision();
         usleep(50000);  // 50 ms delay
