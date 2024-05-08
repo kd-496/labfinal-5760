@@ -1,55 +1,59 @@
-///////////////////////////////////////
-/// 640x480 version! 16-bit color
-/// This code will segfault the original
-/// DE1 computer
-/// compile with
-/// gcc graphics_video_16bit_shooting.c -o gr -O2 -lm -pthread
-///
-///////////////////////////////////////
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/time.h>
 #include <math.h>
-#include <pthread.h>
 #include <termios.h>
+#include <pthread.h>
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
-#define FPGA_CHAR_BASE        0xC9000000
+#define FPGA_CHAR_BASE        0xC9000000 
 #define FPGA_CHAR_SPAN        0x00002000
 #define HW_REGS_BASE          0xff200000
-#define HW_REGS_SPAN          0x00005000
+#define HW_REGS_SPAN          0x00005000 
 
 #define G 6.67430e-11
 #define M 5.972e24
 #define dt 10
 
-#define red (0+(0<<5)+(31<<11))
-#define yellow (0+(63<<5)+(31<<11))
-#define cyan (31+(63<<5)+(0<<11))
-#define black (0x0000)
-#define white (0xffff)
-#define green (0+(63<<5)+(0<<11))
+#define red         (0+(0<<5)+(31<<11))
+#define yellow      (0+(63<<5)+(31<<11))
+#define cyan        (31+(63<<5)+(0<<11))
+#define black       (0x0000)
+#define white       (0xffff)
+#define gray        (15+(31<<5)+(51<<11))
+#define green       (0+(63<<5)+(0<<11))
 
 #define PLAYER_SIZE 10
 #define BULLET_SIZE 4
 #define BULLET_SPEED 15
-#define NUM_BULLETS 10
-#define NUM_TARGETS 5
 
-#define VGA_PIXEL(x,y,color) do {\
-    int *pixel_ptr;\
-    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * 640 + (x)) << 1));\
-    *(short *)pixel_ptr = (color);\
-} while (0)
+#define ORBIT_RADIUS_1 200
+#define ORBIT_RADIUS_2 300
+#define ORBIT_RADIUS_3 400
+#define ORBIT_RADIUS_4 500
+#define ORBIT_RADIUS_5 600
+
+#define ORBIT_PERIOD_1 5000
+#define ORBIT_PERIOD_2 4000
+#define ORBIT_PERIOD_3 3000
+#define ORBIT_PERIOD_4 2000
+#define ORBIT_PERIOD_5 1000
+
+#define ORBIT_COLOR_1 yellow
+#define ORBIT_COLOR_2 cyan
+#define ORBIT_COLOR_3 red
+#define ORBIT_COLOR_4 gray
+#define ORBIT_COLOR_5 white
 
 typedef struct {
-    double x, y;   // Position (meters)
-    double vx, vy; // Velocity (m/s)
-    int px, py;    // Screen coordinates
+    double x, y;
+    double vx, vy;
+    int px, py;
     int size;
     int active;
     int color;
@@ -75,9 +79,9 @@ void *vga_char_virtual_base;
 int fd;
 struct termios old_tio, new_tio;
 char key_pressed = '\0';
-
-Particle player, targets[NUM_TARGETS];
-Bullet bullets[NUM_BULLETS];
+Particle player;
+Particle orbits[5];
+Bullet bullets[10];
 
 void init_bullet(Bullet *b, int x, int y, int color) {
     b->x = x;
@@ -87,7 +91,7 @@ void init_bullet(Bullet *b, int x, int y, int color) {
 }
 
 void fire_bullet() {
-    for (int i = 0; i < NUM_BULLETS; i++) {
+    for (int i = 0; i < 10; i++) {
         if (!bullets[i].active) {
             init_bullet(&bullets[i], player.px, player.py - PLAYER_SIZE, white);
             break;
@@ -96,7 +100,7 @@ void fire_bullet() {
 }
 
 void move_bullets() {
-    for (int i = 0; i < NUM_BULLETS; i++) {
+    for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
             VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
             bullets[i].y -= BULLET_SPEED;
@@ -111,23 +115,21 @@ void move_bullets() {
 }
 
 void detect_collision() {
-    for (int i = 0; i < NUM_BULLETS; i++) {
+    for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
-            for (int j = 0; j < NUM_TARGETS; j++) {
-                if (targets[j].active &&
-                    (abs(bullets[i].x - targets[j].px) < targets[j].size) &&
-                    (abs(bullets[i].y - targets[j].py) < targets[j].size)) {
-                    // Collision detected
-                    targets[j].active = 0;
+            for (int j = 0; j < 5; j++) {
+                if (orbits[j].active && sqrt((bullets[i].x - orbits[j].px) * (bullets[i].x - orbits[j].px) + (bullets[i].y - orbits[j].py) * (bullets[i].y - orbits[j].py)) <= orbits[j].size) {
+                    orbits[j].active = 0;
                     bullets[i].active = 0;
-                    VGA_disc(targets[j].px, targets[j].py, targets[j].size, black); // Clear target
+                    VGA_disc(orbits[j].px, orbits[j].py, orbits[j].size, black);
+                    break;
                 }
             }
         }
     }
 }
 
-void init_particle(Particle *p, double altitude, double scale, int color, int size) {
+void init_particle(Particle *p, double altitude, double scale, int color, int size, double period) {
     p->x = 6.371e6 + altitude;
     p->y = 0;
     p->vx = 0;
@@ -139,62 +141,26 @@ void init_particle(Particle *p, double altitude, double scale, int color, int si
     p->color = color;
 }
 
-void update_target(Particle *p, double center_x, double center_y) {
+void update_particle(Particle *p, double scale, double period) {
+    double r = sqrt(p->x * p->x + p->y * p->y);
+    p->vx += (-G * M * p->x / (r * r * r)) * dt;
+    p->vy += (-G * M * p->y / (r * r * r)) * dt;
+
     if (p->active) {
-        double angle = atan2(p->vy, p->vx) + 0.05; // Increment the angle
-        p->vx = cos(angle) * 0.05;  // Circular motion
-        p->vy = sin(angle) * 0.05;
-
-        // Update position in circular orbit
-        p->x += p->vx;
-        p->y += p->vy;
-
-        // Clear previous position
         VGA_disc(p->px, p->py, p->size, black);
-
-        // Convert to screen coordinates relative to the orbit center
-        p->px = (int)(p->x) + center_x;
-        p->py = (int)(p->y) + center_y;
-
-        // Draw new position
+        p->x = cos(2 * M_PI * dt / period) * (p->x - 320) - sin(2 * M_PI * dt / period) * (p->y - 240) + 320;
+        p->y = sin(2 * M_PI * dt / period) * (p->x - 320) + cos(2 * M_PI * dt / period) * (p->y - 240) + 240;
+        p->px = (int)(p->x * scale);
+        p->py = (int)(p->y * scale);
         VGA_disc(p->px, p->py, p->size, p->color);
     }
 }
 
-void update_game() {
-    // Player controls and firing bullets
+void update_player_position() {
     VGA_disc(player.px, player.py, player.size, black);
-    if (key_pressed == 'w') player.py -= 10;
-    if (key_pressed == 's') player.py += 10;
-    if (key_pressed == 'a') player.px -= 10;
-    if (key_pressed == 'd') player.px += 10;
-    if (key_pressed == ' ') {
-        fire_bullet();
-        key_pressed = '\0'; // Reset key press
-    }
-
-    // Redraw player
+    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
+    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 10;
     VGA_disc(player.px, player.py, player.size, player.color);
-
-    // Move and redraw bullets
-    move_bullets();
-
-    // Update all targets
-    update_target(&targets[0], 200, 200);
-    update_target(&targets[1], 400, 100);
-    update_target(&targets[2], 500, 350);
-    update_target(&targets[3], 100, 400);
-    update_target(&targets[4], 300, 300);
-
-    // Detect bullet collisions with targets
-    detect_collision();
-}
-
-void *keyboard_thread(void *arg) {
-    while (1) {
-        key_pressed = getchar();
-    }
-    return NULL;
 }
 
 void VGA_text(int x, int y, char *text_ptr) {
@@ -238,58 +204,27 @@ void VGA_disc(int x, int y, int r, short pixel_color) {
     }
 }
 
-void init_game() {
-    // Initialize keyboard settings
-    tcgetattr(0, &old_tio);
-    new_tio = old_tio;
-    new_tio.c_lflag &= ~ICANON & ~ECHO;
-    tcsetattr(0, TCSANOW, &new_tio);
-
-    // Initialize player
-    player.px = 320;
-    player.py = 400;
-    player.size = PLAYER_SIZE;
-    player.color = green;
-    player.active = 1;
-
-    // Initialize targets
-    for (int i = 0; i < NUM_TARGETS; i++) {
-        targets[i].x = 100 + i * 100;  // Different centers
-        targets[i].y = 100 + i * 50;
-        targets[i].vx = 0.5 - i * 0.1;  // Different orbital velocities
-        targets[i].vy = 0.5 - i * 0.1;
-        targets[i].px = targets[i].x;
-        targets[i].py = targets[i].y;
-        targets[i].color = yellow;
-        targets[i].size = 10;
-        targets[i].active = 1;
+void *keyboard_thread(void *arg) {
+    while (1) {
+        key_pressed = getchar();
+        if (key_pressed == 's') fire_bullet();
     }
-
-    // Initialize bullets
-    for (int i = 0; i < NUM_BULLETS; i++) {
-        bullets[i].x = 0;
-        bullets[i].y = 0;
-        bullets[i].active = 0;
-        bullets[i].color = white;
-    }
+    return NULL;
 }
 
 int main(void) {
-    // Open /dev/mem
     if ((fd = open("/dev/mem", (O_RDWR | O_SYNC))) == -1) {
         printf("ERROR: could not open \"/dev/mem\"...\n");
         return 1;
     }
 
-    // Map the lightweight bus base
-    h2p_lw_virtual_base = mmap(NULL, HW_REGS_SPAN, PROT_READ | PROT_WRITE, MAP_SHARED, fd, HW_REGS_BASE);
+    h2p_lw_virtual_base = mmap(NULL, HW_REGS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, HW_REGS_BASE);
     if (h2p_lw_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap1() failed...\n");
         close(fd);
         return 1;
     }
 
-    // Map the VGA character buffer base
     vga_char_virtual_base = mmap(NULL, FPGA_CHAR_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, FPGA_CHAR_BASE);
     if (vga_char_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap2() failed...\n");
@@ -299,8 +234,7 @@ int main(void) {
 
     vga_char_ptr = (unsigned int *)(vga_char_virtual_base);
 
-    // Map the VGA pixel buffer base
-    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, SDRAM_BASE);
+    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, SDRAM_BASE);
     if (vga_pixel_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap3() failed...\n");
         close(fd);
@@ -309,24 +243,52 @@ int main(void) {
 
     vga_pixel_ptr = (unsigned int *)(vga_pixel_virtual_base);
 
-    // Initialize the game
-    init_game();
+    char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
+    char text_bottom_row[40] = "Cornell ece5760\0";
+    char text_next[40] = "Shooting Game\0";
 
-    // Start the keyboard thread
-    pthread_t keyboard_tid;
-    pthread_create(&keyboard_tid, NULL, keyboard_thread, NULL);
+    VGA_box(0, 0, 639, 479, black);
+    VGA_text_clear();
+    VGA_text(10, 1, text_top_row);
+    VGA_text(10, 2, text_bottom_row);
+    VGA_text(10, 3, text_next);
 
-    // Main game loop
-    while (1) {
-        update_game();
-        usleep(50000);  // 20 FPS (50ms delay)
+    double scale = 0.000001;
+    double periods[5] = {ORBIT_PERIOD_1, ORBIT_PERIOD_2, ORBIT_PERIOD_3, ORBIT_PERIOD_4, ORBIT_PERIOD_5};
+
+    init_particle(&player, 0, scale, green, PLAYER_SIZE, 0);
+    player.px = 320;
+    player.py = 400;
+
+    for (int i = 0; i < 5; i++) {
+        init_particle(&orbits[i], i * 100000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
     }
 
-    // Restore terminal settings
+    for (int i = 0; i < 10; i++) bullets[i].active = 0;
+
+    // Initialize keyboard settings
+    tcgetattr(0, &old_tio);
+    new_tio = old_tio;
+    new_tio.c_lflag &= ~ICANON;
+    new_tio.c_lflag &= ~ECHO;
+    new_tio.c_cc[VMIN] = 1;
+    new_tio.c_cc[VTIME] = 0;
+    tcsetattr(0, TCSANOW, &new_tio);
+
+    pthread_t tid;
+    pthread_create(&tid, NULL, keyboard_thread, NULL);
+
+    while (1) {
+        update_player_position();
+        for (int i = 0; i < 5; i++) {
+            update_particle(&orbits[i], scale, periods[i]);
+        }
+        move_bullets();
+        detect_collision();
+        usleep(50000);  // 50 ms delay
+    }
+
     tcsetattr(0, TCSANOW, &old_tio);
-
-    // Clean up memory mapping
     close(fd);
-
     return 0;
 }
