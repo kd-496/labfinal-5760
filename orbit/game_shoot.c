@@ -155,13 +155,16 @@ void update_particle(Particle *p, double scale, double period) {
 
     if (p->active) {
         VGA_disc(p->px, p->py, p->size, black);
-        p->x = cos(2 * M_PI * dt / period) * (p->x - 320) - sin(2 * M_PI * dt / period) * (p->y - 350) + 320; // Adjusted the center down to 350
-        p->y = sin(2 * M_PI * dt / period) * (p->x - 320) + cos(2 * M_PI * dt / period) * (p->y - 350) + 350; // Adjusted the center down to 350
-        p->px = (int)(p->x * scale);
-        p->py = (int)(p->y * scale);
+        double new_x = cos(2 * M_PI * dt / period) * (p->x - 320) - sin(2 * M_PI * dt / period) * (p->y - 350) + 320; // Adjusted the center down to 350
+        double new_y = sin(2 * M_PI * dt / period) * (p->x - 320) + cos(2 * M_PI * dt / period) * (p->y - 350) + 350; // Adjusted the center down to 350
+        p->x = new_x;
+        p->y = new_y;
+        p->px = (int)(new_x * scale);
+        p->py = (int)(new_y * scale);
         VGA_disc(p->px, p->py, p->size, p->color);
     }
 }
+
 
 void update_player_position() {
     VGA_disc(player.px, player.py, player.size, black);
