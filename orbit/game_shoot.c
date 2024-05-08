@@ -8,6 +8,7 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
+#include <time.h> // Include time.h for srand
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
@@ -255,7 +256,7 @@ int main(void) {
     player.py = 400;
 
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        init_particle(&enemies[i], (rand() % 400 + 200) * 1000, scale, (i == 0) ? yellow : cyan, ENEMY_RADIUS);
+        init_particle(&enemies[i], (rand() % 600 + 20) * scale, scale, (i == 0) ? yellow : cyan, ENEMY_RADIUS);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -286,5 +287,3 @@ int main(void) {
     close(fd);
     return 0;
 }
-
-
