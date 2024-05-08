@@ -1,11 +1,3 @@
-///////////////////////////////////////
-/// 640x480 version! 16-bit color
-/// This code will segfault the original
-/// DE1 computer
-/// compile with
-/// gcc graphics_video_16bit.c -o gr -O2 -lm
-///
-///////////////////////////////////////
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -16,7 +8,6 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
-#include <time.h>
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
@@ -40,8 +31,10 @@
 #define PLAYER_SIZE 10
 #define BULLET_SIZE 4
 #define BULLET_SPEED 15
-#define ENEMY_COUNT 5
-#define BULLET_COUNT 10
+
+#define ENEMY_COUNT 2
+#define ENEMY_RADIUS 12
+#define ENEMY_SPEED 1
 
 #define VGA_PIXEL(x,y,color) do {\
     int *pixel_ptr;\
@@ -56,9 +49,6 @@ typedef struct {
     int size;
     int active;
     int color;
-    double center_x, center_y; // Orbital center
-    double angular_speed; // Angular speed for orbital movement
-    double angle; // Current angle
 } Particle;
 
 typedef struct {
@@ -83,7 +73,7 @@ struct termios old_tio, new_tio;
 char key_pressed = '\0';
 Particle player;
 Particle enemies[ENEMY_COUNT];
-Bullet bullets[BULLET_COUNT];
+Bullet bullets[10];
 
 void init_bullet(Bullet *b, int x, int y, int color) {
     b->x = x;
@@ -93,7 +83,7 @@ void init_bullet(Bullet *b, int x, int y, int color) {
 }
 
 void fire_bullet() {
-    for (int i = 0; i < BULLET_COUNT; i++) {
+    for (int i = 0; i < 10; i++) {
         if (!bullets[i].active) {
             init_bullet(&bullets[i], player.px, player.py - PLAYER_SIZE, white);
             break;
@@ -102,7 +92,7 @@ void fire_bullet() {
 }
 
 void move_bullets() {
-    for (int i = 0; i < BULLET_COUNT; i++) {
+    for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
             VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
             bullets[i].y -= BULLET_SPEED;
@@ -117,44 +107,45 @@ void move_bullets() {
 }
 
 void detect_collision() {
-    for (int i = 0; i < BULLET_COUNT; i++) {
+    for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
             for (int j = 0; j < ENEMY_COUNT; j++) {
-                if (enemies[j].active && bullets[i].x >= enemies[j].px - enemies[j].size && bullets[i].x <= enemies[j].px + enemies[j].size &&
-                    bullets[i].y >= enemies[j].py - enemies[j].size && bullets[i].y <= enemies[j].py + enemies[j].size) {
+                if (enemies[j].active && bullets[i].x >= enemies[j].px - ENEMY_RADIUS && bullets[i].x <= enemies[j].px + ENEMY_RADIUS &&
+                    bullets[i].y >= enemies[j].py - ENEMY_RADIUS && bullets[i].y <= enemies[j].py + ENEMY_RADIUS) {
                     enemies[j].active = 0;
                     bullets[i].active = 0;
-                    VGA_disc(enemies[j].px, enemies[j].py, enemies[j].size, black);
+                    VGA_disc(enemies[j].px, enemies[j].py, ENEMY_RADIUS, black);
                 }
             }
         }
     }
 }
 
-void init_orbital_enemy(Particle *p, double scale, int color, int size, double center_x, double center_y, double radius, double angular_speed) {
-    p->x = center_x + radius;
-    p->y = center_y;
+void init_particle(Particle *p, double altitude, double scale, int color, int size) {
+    p->x = (rand() % 600 + 20) * scale; // Randomize initial x position within screen
+    p->y = 0;
     p->vx = 0;
-    p->vy = 0;
+    p->vy = sqrt(G * M / p->x);
     p->px = (int)(p->x * scale);
     p->py = (int)(p->y * scale);
     p->size = size;
     p->active = 1;
     p->color = color;
-    p->center_x = center_x;
-    p->center_y = center_y;
-    p->angular_speed = angular_speed;
-    p->angle = 0;
 }
 
-void update_orbital_enemy(Particle *p, double scale) {
+void update_particle(Particle *p, double scale) {
+    double r = sqrt(p->x * p->x + p->y * p->y);
+    p->vx += (-G * M * p->x / (r * r * r)) * dt;
+    p->vy += (-G * M * p->y / (r * r * r)) * dt;
+
     if (p->active) {
         VGA_disc(p->px, p->py, p->size, black);
-        p->angle += p->angular_speed * dt / 1000.0; // Increase angle
-        p->x = p->center_x + cos(p->angle) * (640 / 2 - p->size);
-        p->y = p->center_y + sin(p->angle) * (480 / 2 - p->size);
+        p->x += p->vx * dt * ENEMY_SPEED;
+        p->y += p->vy * dt * ENEMY_SPEED;
         p->px = (int)(p->x * scale);
         p->py = (int)(p->y * scale);
+        if (p->px < 0) p->px = 0;
+        if (p->px >= 640 - p->size) p->px = 640 - p->size;
         VGA_disc(p->px, p->py, p->size, p->color);
     }
 }
@@ -163,8 +154,6 @@ void update_player_position() {
     VGA_disc(player.px, player.py, player.size, black);
     if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
     if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 10;
-    if (key_pressed == 'w' && player.py > 0 + PLAYER_SIZE) player.py -= 10;
-    if (key_pressed == 's' && player.py < 480 - PLAYER_SIZE) player.py += 10;
     VGA_disc(player.px, player.py, player.size, player.color);
 }
 
@@ -212,7 +201,7 @@ void VGA_disc(int x, int y, int r, short pixel_color) {
 void *keyboard_thread(void *arg) {
     while (1) {
         key_pressed = getchar();
-        if (key_pressed == 'f') fire_bullet();
+        if (key_pressed == 's') fire_bullet();
     }
     return NULL;
 }
@@ -258,23 +247,18 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 1.0;
+    double scale = 0.001;
+    srand(time(NULL)); // Seed random number generator
+
+    init_particle(&player, 0, scale, green, PLAYER_SIZE);
     player.px = 320;
     player.py = 400;
-    player.size = PLAYER_SIZE;
-    player.color = green;
 
-    srand(time(NULL));
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        double center_x = rand() % (640 - 100) + 50;
-        double center_y = rand() % (480 - 100) + 50;
-        double radius = rand() % 50 + 30;
-        double angular_speed = (rand() % 10 + 5) / 1000.0;
-        int color = (i % 2 == 0) ? yellow : cyan;
-        init_orbital_enemy(&enemies[i], scale, color, 12, center_x, center_y, radius, angular_speed);
+        init_particle(&enemies[i], (rand() % 400 + 200) * 1000, scale, (i == 0) ? yellow : cyan, ENEMY_RADIUS);
     }
 
-    for (int i = 0; i < BULLET_COUNT; i++) bullets[i].active = 0;
+    for (int i = 0; i < 10; i++) bullets[i].active = 0;
 
     // Initialize keyboard settings
     tcgetattr(0, &old_tio);
@@ -291,7 +275,7 @@ int main(void) {
     while (1) {
         update_player_position();
         for (int i = 0; i < ENEMY_COUNT; i++) {
-            update_orbital_enemy(&enemies[i], scale);
+            update_particle(&enemies[i], scale);
         }
         move_bullets();
         detect_collision();
@@ -302,4 +286,5 @@ int main(void) {
     close(fd);
     return 0;
 }
+
 
