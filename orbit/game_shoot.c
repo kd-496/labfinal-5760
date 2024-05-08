@@ -8,18 +8,18 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
-#include <time.h>
+#include <time.h> // For random number generation
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
 #define FPGA_CHAR_BASE        0xC9000000 
 #define FPGA_CHAR_SPAN        0x00002000
-#define HW_REGS_BASE          0xFF200000
+#define HW_REGS_BASE          0xff200000
 #define HW_REGS_SPAN          0x00005000 
 
 #define G 6.67430e-11
 #define M 5.972e24
-#define dt 0.01
+#define dt 0.05 // Reduced time step for smoother motion
 
 #define red         (0+(0<<5)+(31<<11))
 #define yellow      (0+(63<<5)+(31<<11))
@@ -29,10 +29,11 @@
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
 
-#define PLAYER_SIZE 20
-#define BULLET_SIZE 10
-#define BULLET_SPEED 5
-#define ENEMY_COUNT 5
+#define PLAYER_SIZE 10
+#define BULLET_SIZE 4
+#define BULLET_SPEED 15
+
+#define ENEMY_COUNT 5 // Number of orbital motion particles
 
 #define VGA_PIXEL(x,y,color) do {\
     int *pixel_ptr;\
@@ -50,16 +51,7 @@ typedef struct {
 } Particle;
 
 typedef struct {
-    double x, y;
-    double vx, vy;
-    int px, py;
-    int size;
-    int active;
-    int color;
-} Enemy;
-
-typedef struct {
-    double x, y;
+    int x, y;
     int active;
     int color;
 } Bullet;
@@ -79,32 +71,20 @@ int fd;
 struct termios old_tio, new_tio;
 char key_pressed = '\0';
 Particle player;
+Particle enemies[ENEMY_COUNT];
 Bullet bullets[10];
-Enemy enemies[ENEMY_COUNT];
 
-void init_bullet(Bullet *b, double x, double y, int color) {
+void init_bullet(Bullet *b, int x, int y, int color) {
     b->x = x;
     b->y = y;
     b->active = 1;
     b->color = color;
 }
 
-void init_enemy(Enemy *e, double altitude, int size, int color) {
-    e->x = 6.371e6 + altitude;
-    e->y = 0;
-    e->vx = 0;
-    e->vy = sqrt(G * M / e->x);
-    e->px = rand() % 640;
-    e->py = rand() % 240;
-    e->size = size;
-    e->active = 1;
-    e->color = color;
-}
-
 void fire_bullet() {
     for (int i = 0; i < 10; i++) {
         if (!bullets[i].active) {
-            init_bullet(&bullets[i], player.px + PLAYER_SIZE / 2, player.py - PLAYER_SIZE / 2, white);
+            init_bullet(&bullets[i], player.px, player.py - PLAYER_SIZE, white);
             break;
         }
     }
@@ -113,30 +93,13 @@ void fire_bullet() {
 void move_bullets() {
     for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
-            VGA_box((int)bullets[i].x, (int)bullets[i].y, (int)bullets[i].x + BULLET_SIZE, (int)bullets[i].y + BULLET_SIZE, black);
+            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
             bullets[i].y -= BULLET_SPEED;
 
             if (bullets[i].y < 0) {
                 bullets[i].active = 0;
             } else {
-                VGA_box((int)bullets[i].x, (int)bullets[i].y, (int)bullets[i].x + BULLET_SIZE, (int)bullets[i].y + BULLET_SIZE, bullets[i].color);
-            }
-        }
-    }
-}
-
-void move_enemies() {
-    for (int i = 0; i < ENEMY_COUNT; i++) {
-        if (enemies[i].active) {
-            VGA_disc((int)enemies[i].px, (int)enemies[i].py, enemies[i].size, black);
-            enemies[i].x += enemies[i].vx * dt;
-            enemies[i].y += enemies[i].vy * dt;
-            enemies[i].px = (int)enemies[i].x;
-            enemies[i].py = (int)enemies[i].y;
-            VGA_disc((int)enemies[i].px, (int)enemies[i].py, enemies[i].size, enemies[i].color);
-
-            if (enemies[i].px < 0 || enemies[i].px > 639 || enemies[i].py < 0 || enemies[i].py > 239) {
-                init_enemy(&enemies[i], rand() % 500000, 12, yellow);
+                VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, bullets[i].color);
             }
         }
     }
@@ -146,22 +109,52 @@ void detect_collision() {
     for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
             for (int j = 0; j < ENEMY_COUNT; j++) {
-                if (enemies[j].active && bullets[i].x >= enemies[j].px - enemies[j].size && bullets[i].x <= enemies[j].px + enemies[j].size &&
-                    bullets[i].y >= enemies[j].py - enemies[j].size && bullets[i].y <= enemies[j].py + enemies[j].size) {
+                if (enemies[j].active &&
+                    bullets[i].x >= enemies[j].px - enemies[j].size &&
+                    bullets[i].x <= enemies[j].px + enemies[j].size &&
+                    bullets[i].y >= enemies[j].py - enemies[j].size &&
+                    bullets[i].y <= enemies[j].py + enemies[j].size) {
                     enemies[j].active = 0;
                     bullets[i].active = 0;
-                    VGA_disc((int)enemies[j].px, (int)enemies[j].py, enemies[j].size, black);
+                    VGA_disc(enemies[j].px, enemies[j].py, enemies[j].size, black);
                 }
             }
         }
     }
 }
 
+void init_particle(Particle *p, double altitude, double scale, int color, int size) {
+    p->x = rand() % 640; // Random x position
+    p->y = rand() % 200; // Random y position
+    p->vx = 0;
+    p->vy = sqrt(G * M / p->x);
+    p->px = (int)(p->x * scale);
+    p->py = (int)(p->y * scale);
+    p->size = size;
+    p->active = 1;
+    p->color = color;
+}
+
+void update_particle(Particle *p, double scale) {
+    double r = sqrt(p->x * p->x + p->y * p->y);
+    p->vx += (-G * M * p->x / (r * r * r)) * dt;
+    p->vy += (-G * M * p->y / (r * r * r)) * dt;
+
+    if (p->active) {
+        VGA_disc(p->px, p->py, p->size, black);
+        p->x += p->vx * dt;
+        p->y += p->vy * dt;
+        p->px = (int)(p->x * scale);
+        p->py = (int)(p->y * scale);
+        VGA_disc(p->px, p->py, p->size, p->color);
+    }
+}
+
 void update_player_position() {
-    VGA_disc((int)player.px, (int)player.py, player.size, black);
-    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE / 2) player.px -= 5;
-    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE / 2) player.px += 5;
-    VGA_disc((int)player.px, (int)player.py, player.size, green);
+    VGA_disc(player.px, player.py, player.size, black);
+    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
+    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 10;
+    VGA_disc(player.px, player.py, player.size, player.color);
 }
 
 void VGA_text(int x, int y, char *text_ptr) {
@@ -214,6 +207,8 @@ void *keyboard_thread(void *arg) {
 }
 
 int main(void) {
+    srand(time(NULL)); // Seed for random number generation
+
     if ((fd = open("/dev/mem", (O_RDWR | O_SYNC))) == -1) {
         printf("ERROR: could not open \"/dev/mem\"...\n");
         return 1;
@@ -254,14 +249,13 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    srand(time(NULL));
-
-    init_enemy(&player, 0, PLAYER_SIZE, green);
+    double scale = 1.0 / 1e6; // Adjust scale to fit particles in the screen
+    init_particle(&player, 0, scale, green, PLAYER_SIZE);
     player.px = 320;
-    player.py = 460;
+    player.py = 400;
 
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        init_enemy(&enemies[i], rand() % 500000, 12, yellow);
+        init_particle(&enemies[i], rand() % 600 + 20, scale, (i % 2 == 0) ? yellow : cyan, 12);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -280,13 +274,16 @@ int main(void) {
 
     while (1) {
         update_player_position();
-        move_enemies();
+        for (int i = 0; i < ENEMY_COUNT; i++) {
+            update_particle(&enemies[i], scale);
+        }
         move_bullets();
         detect_collision();
-        usleep(10000);  // 10 ms delay
+        usleep(50000);  // 50 ms delay
     }
 
     tcsetattr(0, TCSANOW, &old_tio);
     close(fd);
     return 0;
 }
+
