@@ -8,7 +8,6 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
-#include <time.h> // For random number generation
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
@@ -19,7 +18,7 @@
 
 #define G 6.67430e-11
 #define M 5.972e24
-#define dt 0.05 // Reduced time step for smoother motion
+#define dt 10
 
 #define red         (0+(0<<5)+(31<<11))
 #define yellow      (0+(63<<5)+(31<<11))
@@ -33,7 +32,9 @@
 #define BULLET_SIZE 4
 #define BULLET_SPEED 15
 
-#define ENEMY_COUNT 5 // Number of orbital motion particles
+#define ENEMY_COUNT 2
+#define ENEMY_RADIUS 12
+#define ENEMY_SPEED 1
 
 #define VGA_PIXEL(x,y,color) do {\
     int *pixel_ptr;\
@@ -109,14 +110,11 @@ void detect_collision() {
     for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
             for (int j = 0; j < ENEMY_COUNT; j++) {
-                if (enemies[j].active &&
-                    bullets[i].x >= enemies[j].px - enemies[j].size &&
-                    bullets[i].x <= enemies[j].px + enemies[j].size &&
-                    bullets[i].y >= enemies[j].py - enemies[j].size &&
-                    bullets[i].y <= enemies[j].py + enemies[j].size) {
+                if (enemies[j].active && bullets[i].x >= enemies[j].px - ENEMY_RADIUS && bullets[i].x <= enemies[j].px + ENEMY_RADIUS &&
+                    bullets[i].y >= enemies[j].py - ENEMY_RADIUS && bullets[i].y <= enemies[j].py + ENEMY_RADIUS) {
                     enemies[j].active = 0;
                     bullets[i].active = 0;
-                    VGA_disc(enemies[j].px, enemies[j].py, enemies[j].size, black);
+                    VGA_disc(enemies[j].px, enemies[j].py, ENEMY_RADIUS, black);
                 }
             }
         }
@@ -124,8 +122,8 @@ void detect_collision() {
 }
 
 void init_particle(Particle *p, double altitude, double scale, int color, int size) {
-    p->x = rand() % 640; // Random x position
-    p->y = rand() % 200; // Random y position
+    p->x = (rand() % 600 + 20) * scale; // Randomize initial x position within screen
+    p->y = 0;
     p->vx = 0;
     p->vy = sqrt(G * M / p->x);
     p->px = (int)(p->x * scale);
@@ -142,10 +140,12 @@ void update_particle(Particle *p, double scale) {
 
     if (p->active) {
         VGA_disc(p->px, p->py, p->size, black);
-        p->x += p->vx * dt;
-        p->y += p->vy * dt;
+        p->x += p->vx * dt * ENEMY_SPEED;
+        p->y += p->vy * dt * ENEMY_SPEED;
         p->px = (int)(p->x * scale);
         p->py = (int)(p->y * scale);
+        if (p->px < 0) p->px = 0;
+        if (p->px >= 640 - p->size) p->px = 640 - p->size;
         VGA_disc(p->px, p->py, p->size, p->color);
     }
 }
@@ -207,8 +207,6 @@ void *keyboard_thread(void *arg) {
 }
 
 int main(void) {
-    srand(time(NULL)); // Seed for random number generation
-
     if ((fd = open("/dev/mem", (O_RDWR | O_SYNC))) == -1) {
         printf("ERROR: could not open \"/dev/mem\"...\n");
         return 1;
@@ -249,13 +247,15 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 1.0 / 1e6; // Adjust scale to fit particles in the screen
+    double scale = 0.001;
+    srand(time(NULL)); // Seed random number generator
+
     init_particle(&player, 0, scale, green, PLAYER_SIZE);
     player.px = 320;
     player.py = 400;
 
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        init_particle(&enemies[i], rand() % 600 + 20, scale, (i % 2 == 0) ? yellow : cyan, 12);
+        init_particle(&enemies[i], (rand() % 400 + 200) * 1000, scale, (i == 0) ? yellow : cyan, ENEMY_RADIUS);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -286,4 +286,3 @@ int main(void) {
     close(fd);
     return 0;
 }
-
