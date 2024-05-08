@@ -1,6 +1,3 @@
-To modify the code to create a shooting game where one particle moves in the x-y direction and shoots other particles moving in orbital motion, we need to make several changes. Below is the modified code:
-
-```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -173,9 +170,7 @@ void VGA_text(int x, int y, char *text_ptr) {
     while (*text_ptr) {
         *(character_buffer + offset) = *(text_ptr);
         ++text_ptr;
-       
-
- ++offset;
+        ++offset;
     }
 }
 
@@ -295,16 +290,3 @@ int main(void) {
     close(fd);
     return 0;
 }
-```
-
-In this modified version:
-
-- The `Particle` struct was renamed to `Enemy` to represent the moving particles in orbital motion.
-- The `Bullet` struct was adjusted to include double precision coordinates to handle smoother motion.
-- Added `init_enemy()` function to initialize the orbital motion particles.
-- The main loop was modified to continuously move the enemies and check for collisions.
-- Random initial positions for enemies were generated.
-- Used `usleep()` for smoother animation.
-- The `fire_bullet()` function was adjusted to take into account the player's position and fire bullets accordingly.
-- Input control was changed to use a separate thread to handle keyboard input.
-- A delay was added at the end of the loop to control the speed of the game.
