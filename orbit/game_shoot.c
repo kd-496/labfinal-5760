@@ -19,13 +19,6 @@
 #define G 6.67430e-11
 #define M 5.972e24
 #define dt 10
-#define M_PI 3.14159265358979323846
-
-#define VGA_PIXEL(x,y,color) do {\
-    int *pixel_ptr;\
-    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * 640 + (x)) << 1));\
-    *(short *)pixel_ptr = (color);\
-} while (0)
 
 #define red         (0+(0<<5)+(31<<11))
 #define yellow      (0+(63<<5)+(31<<11))
@@ -142,7 +135,7 @@ void init_particle(Particle *p, double altitude, double scale, int color, int si
     p->vx = 0;
     p->vy = sqrt(G * M / p->x);
     p->px = (int)(p->x * scale) + 320;
-    p->py = (int)(p->y * scale) + 240;
+    p->py = (int)(p->y * scale) + 350; // Adjusted the center down to 350
     p->size = size;
     p->active = 1;
     p->color = color;
@@ -155,8 +148,8 @@ void update_particle(Particle *p, double scale, double period) {
 
     if (p->active) {
         VGA_disc(p->px, p->py, p->size, black);
-        p->x = cos(2 * M_PI * dt / period) * (p->x - 320) - sin(2 * M_PI * dt / period) * (p->y - 240) + 320;
-        p->y = sin(2 * M_PI * dt / period) * (p->x - 320) + cos(2 * M_PI * dt / period) * (p->y - 240) + 240;
+        p->x = cos(2 * M_PI * dt / period) * (p->x - 320) - sin(2 * M_PI * dt / period) * (p->y - 350) + 320; // Adjusted the center down to 350
+        p->y = sin(2 * M_PI * dt / period) * (p->x - 320) + cos(2 * M_PI * dt / period) * (p->y - 350) + 350; // Adjusted the center down to 350
         p->px = (int)(p->x * scale);
         p->py = (int)(p->y * scale);
         VGA_disc(p->px, p->py, p->size, p->color);
@@ -260,15 +253,13 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 1.0 / 500000; // Adjusted scale for 640x480
+    double scale = 1.0; // No scaling needed
     double periods[5] = {ORBIT_PERIOD_1, ORBIT_PERIOD_2, ORBIT_PERIOD_3, ORBIT_PERIOD_4, ORBIT_PERIOD_5};
 
     init_particle(&player, 0, scale, green, PLAYER_SIZE, 0);
-    player.px = 320;
-    player.py = 400;
 
     for (int i = 0; i < 5; i++) {
-        init_particle(&orbits[i], i * 40000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
+        init_particle(&orbits[i], i * 100000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
