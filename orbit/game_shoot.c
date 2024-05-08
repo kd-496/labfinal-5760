@@ -147,6 +147,7 @@ void update_particle(Particle *p) {
 
 void update_player_position() {
     VGA_disc(player.px / 1000, player.py / 1000, player.size, black);
+    VGA_disc(320, 460, player.size, player.color); // Place player at the bottom middle
     if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE * 1000) player.px -= 10 * 1000;
     if (key_pressed == 'd' && player.px < 640 * 1000 - PLAYER_SIZE * 1000) player.px += 10 * 1000;
     VGA_disc(player.px / 1000, player.py / 1000, player.size, player.color);
@@ -246,9 +247,9 @@ int main(void) {
     double scale = 0.001;
     srand(time(NULL)); // Seed random number generator
 
-    init_particle(&player, 320 * scale, 400 * scale, 0, 0, green, PLAYER_SIZE);
+    init_particle(&player, 320 * scale, 460 * scale, 0, 0, green, PLAYER_SIZE);
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        init_particle(&enemies[i], (rand() % 600 + 20) * scale, 0, 0, sqrt(G * M / ((rand() % 600 + 20) * scale)), (i == 0) ? yellow : cyan, ENEMY_RADIUS);
+        init_particle(&enemies[i], (rand() % 600 + 20) * scale, (rand() % 300 + 50) * scale, 0, sqrt(G * M / ((rand() % 600 + 20) * scale)), (i == 0) ? yellow : cyan, ENEMY_RADIUS);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -279,4 +280,3 @@ int main(void) {
     close(fd);
     return 0;
 }
-
