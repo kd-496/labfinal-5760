@@ -28,15 +28,15 @@
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
 
-#define PLAYER_SIZE 10
-#define BULLET_SIZE 4
+#define PLAYER_SIZE 16
+#define BULLET_SIZE 8
 #define BULLET_SPEED 15
 
-#define ORBIT_RADIUS_1 200
-#define ORBIT_RADIUS_2 300
-#define ORBIT_RADIUS_3 400
-#define ORBIT_RADIUS_4 500
-#define ORBIT_RADIUS_5 600
+#define ORBIT_RADIUS_1 160
+#define ORBIT_RADIUS_2 240
+#define ORBIT_RADIUS_3 320
+#define ORBIT_RADIUS_4 400
+#define ORBIT_RADIUS_5 480
 
 #define ORBIT_PERIOD_1 5000
 #define ORBIT_PERIOD_2 4000
@@ -253,7 +253,7 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 0.000001;
+    double scale = 1.0 / 5000000; // Adjusted scale for 640x480
     double periods[5] = {ORBIT_PERIOD_1, ORBIT_PERIOD_2, ORBIT_PERIOD_3, ORBIT_PERIOD_4, ORBIT_PERIOD_5};
 
     init_particle(&player, 0, scale, green, PLAYER_SIZE, 0);
@@ -261,7 +261,7 @@ int main(void) {
     player.py = 400;
 
     for (int i = 0; i < 5; i++) {
-        init_particle(&orbits[i], i * 100000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
+        init_particle(&orbits[i], i * 80000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -292,3 +292,4 @@ int main(void) {
     close(fd);
     return 0;
 }
+
