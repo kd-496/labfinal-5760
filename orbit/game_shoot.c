@@ -19,6 +19,13 @@
 #define G 6.67430e-11
 #define M 5.972e24
 #define dt 10
+#define M_PI 3.14159265358979323846
+
+#define VGA_PIXEL(x,y,color) do {\
+    int *pixel_ptr;\
+    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * 640 + (x)) << 1));\
+    *(short *)pixel_ptr = (color);\
+} while (0)
 
 #define red         (0+(0<<5)+(31<<11))
 #define yellow      (0+(63<<5)+(31<<11))
