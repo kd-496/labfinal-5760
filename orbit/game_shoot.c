@@ -260,7 +260,7 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 1.0; // No scaling needed
+    double scale = 1.0 / 500000;; // No scaling needed
     double periods[5] = {ORBIT_PERIOD_1, ORBIT_PERIOD_2, ORBIT_PERIOD_3, ORBIT_PERIOD_4, ORBIT_PERIOD_5};
 
     init_particle(&player, 0, scale, green, PLAYER_SIZE, 0);
