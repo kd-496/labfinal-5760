@@ -140,9 +140,9 @@ void init_particle(Particle *p, double altitude, double scale, int color, int si
     p->center_y = cy; // Center Y
 }
 
-void update_particle_orbit(Particle *p, double dt) {
+void update_particle_orbit(Particle *p, double interval) {
     if (p->active) {
-        p->angle += dt; // Update angle for simplicity, assumes circular motion
+        p->angle += interval; // Update angle for simplicity, assumes circular motion
         p->x = p->center_x + p->radius * cos(p->angle);
         p->y = p->center_y + p->radius * sin(p->angle);
         VGA_disc(p->px, p->py, p->size, black); // Clear old position
