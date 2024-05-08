@@ -11,10 +11,10 @@
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
-#define FPGA_CHAR_BASE        0xC9000000 
+#define FPGA_CHAR_BASE        0xC9000000
 #define FPGA_CHAR_SPAN        0x00002000
 #define HW_REGS_BASE          0xff200000
-#define HW_REGS_SPAN          0x00005000 
+#define HW_REGS_SPAN          0x00005000
 
 #define G 6.67430e-11
 #define M 5.972e24
@@ -115,9 +115,9 @@ void detect_collision() {
             }
 
             if (enemy2.active && bullets[i].x >= enemy2.px - enemy2.size && bullets[i].x <= enemy2.px + enemy2.size &&
-                bullets[i.y >= enemy2.py - enemy2.size && bullets[i].y <= enemy2.py + enemy2.size) {
+                bullets[i].y >= enemy2.py - enemy2.size && bullets[i].y <= enemy2.py + enemy2.size) {
                 enemy2.active = 0;
-                bullets[i.active = 0;
+                bullets[i].active = 0;
                 VGA_disc(enemy2.px, enemy2.py, enemy2.size, black);
             }
         }
@@ -175,7 +175,7 @@ void VGA_text_clear() {
     volatile char *character_buffer = (char *)vga_char_ptr;
     int offset, x, y;
     for (x = 0; x < 79; x++) {
-        for (y = 0; y 59; y++) {
+        for (y = 0; y < 59; y++) {
             offset = (y << 7) + x;
             *(character_buffer + offset) = ' ';
         }
@@ -252,10 +252,7 @@ int main(void) {
     VGA_text(10, 3, text_next);
 
     double scale = 0.000001;
-    init_particle(&player, 0, scale, green, PLAYER_SIZE);
-    player.px = 320;
-    player.py = 440; // Set player initially near bottom middle
-
+    init_particle(&player, 0, scale, green, PLAYER_SIZE, 320, 440, 0); // Place player at the bottom center
     init_particle(&enemy1, 400000, scale, yellow, 12, 200, 240, 50);  // Different center and radius
     init_particle(&enemy2, 800000, scale, cyan, 12, 400, 240, 100);  // Different center and radius
 
