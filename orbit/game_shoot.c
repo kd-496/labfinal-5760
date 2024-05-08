@@ -29,9 +29,9 @@
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
 
-#define PLAYER_SIZE 10
-#define BULLET_SIZE 4
-#define BULLET_SPEED 1
+#define PLAYER_SIZE 20
+#define BULLET_SIZE 10
+#define BULLET_SPEED 5
 #define ENEMY_COUNT 5
 
 #define VGA_PIXEL(x,y,color) do {\
@@ -95,7 +95,7 @@ void init_enemy(Enemy *e, double altitude, int size, int color) {
     e->vx = 0;
     e->vy = sqrt(G * M / e->x);
     e->px = rand() % 640;
-    e->py = rand() % 480;
+    e->py = rand() % 240;
     e->size = size;
     e->active = 1;
     e->color = color;
@@ -104,7 +104,7 @@ void init_enemy(Enemy *e, double altitude, int size, int color) {
 void fire_bullet() {
     for (int i = 0; i < 10; i++) {
         if (!bullets[i].active) {
-            init_bullet(&bullets[i], player.px, player.py - PLAYER_SIZE, white);
+            init_bullet(&bullets[i], player.px + PLAYER_SIZE / 2, player.py - PLAYER_SIZE / 2, white);
             break;
         }
     }
@@ -135,7 +135,7 @@ void move_enemies() {
             enemies[i].py = (int)enemies[i].y;
             VGA_disc((int)enemies[i].px, (int)enemies[i].py, enemies[i].size, enemies[i].color);
 
-            if (enemies[i].px < 0 || enemies[i].px > 639 || enemies[i].py < 0 || enemies[i].py > 479) {
+            if (enemies[i].px < 0 || enemies[i].px > 639 || enemies[i].py < 0 || enemies[i].py > 239) {
                 init_enemy(&enemies[i], rand() % 500000, 12, yellow);
             }
         }
@@ -159,8 +159,8 @@ void detect_collision() {
 
 void update_player_position() {
     VGA_disc((int)player.px, (int)player.py, player.size, black);
-    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 5;
-    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 5;
+    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE / 2) player.px -= 5;
+    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE / 2) player.px += 5;
     VGA_disc((int)player.px, (int)player.py, player.size, green);
 }
 
@@ -258,7 +258,7 @@ int main(void) {
 
     init_enemy(&player, 0, PLAYER_SIZE, green);
     player.px = 320;
-    player.py = 400;
+    player.py = 460;
 
     for (int i = 0; i < ENEMY_COUNT; i++) {
         init_enemy(&enemies[i], rand() % 500000, 12, yellow);
