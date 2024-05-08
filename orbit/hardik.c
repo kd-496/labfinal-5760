@@ -74,6 +74,8 @@ struct termios old_tio, new_tio;
 char key_pressed = '\0';
 Particle player, enemies[4]; // Array to hold multiple enemies
 Bullet bullets[10];
+int score = 0; // Player score
+char score_text[50];
 
 void init_bullet(Bullet *b, int x, int y, int color) {
     b->x = x;
@@ -114,10 +116,31 @@ void detect_collision() {
                     bullets[b].y >= enemies[e].py - enemies[e].size && bullets[b].y <= enemies[e].py + enemies[e].size) {
                     enemies[e].active = 0;
                     bullets[b].active = 0;
-                    VGA_box(bullets[b].x, bullets[b].y, bullets[b].x + BULLET_SIZE, bullets[b].y + BULLET_SIZE, black); // Clear the bullet
+                    score += 100; // Increase score
+                    VGA_disc(enemies[e].px, enemies[e].py, enemies[e].size, black); // Clear the enemy from the screen
                 }
             }
         }
+    }
+}
+
+void display_score() {
+    sprintf(score_text, "Score: %d", score);
+    VGA_text(10, 4, score_text);
+}
+
+void check_game_over() {
+    int all_inactive = 1;
+    for (int i = 0; i < 4; i++) {
+        if (enemies[i].active) {
+            all_inactive = 0;
+            break;
+        }
+    }
+    if (all_inactive) {
+        VGA_text_clear();
+        VGA_text(10, 15, "Game Over! Final Score: ");
+        VGA_text(32, 15, score_text);
     }
 }
 
@@ -276,6 +299,8 @@ int main(void) {
         }
         move_bullets();
         detect_collision();
+        display_score();
+        check_game_over();
         usleep(50000);  // 50 ms delay
     }
 
