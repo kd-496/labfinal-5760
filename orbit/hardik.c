@@ -114,7 +114,7 @@ void detect_collision() {
                     bullets[b].y >= enemies[e].py - enemies[e].size && bullets[b].y <= enemies[e].py + enemies[e].size) {
                     enemies[e].active = 0;
                     bullets[b].active = 0;
-                    VGA_disc(enemies[e].px, enemies[e].py, enemies[e].size, black);
+                    VGA_box(bullets[b].x, bullets[b].y, bullets[b].x + BULLET_SIZE, bullets[b].y + BULLET_SIZE, black); // Clear the bullet
                 }
             }
         }
