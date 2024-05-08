@@ -8,13 +8,13 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
-#include <time.h> // Include time.h for srand
+#include <time.h>
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
 #define FPGA_CHAR_BASE        0xC9000000 
 #define FPGA_CHAR_SPAN        0x00002000
-#define HW_REGS_BASE          0xff200000
+#define HW_REGS_BASE          0xFF200000
 #define HW_REGS_SPAN          0x00005000 
 
 #define G 6.67430e-11
@@ -25,7 +25,7 @@
 #define yellow      (0+(63<<5)+(31<<11))
 #define cyan        (31+(63<<5)+(0<<11))
 #define black       (0x0000)
-#define white       (0xffff)
+#define white       (0xFFFF)
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
 
@@ -122,40 +122,34 @@ void detect_collision() {
     }
 }
 
-void init_particle(Particle *p, double altitude, double scale, int color, int size) {
-    p->x = (rand() % 600 + 20) * scale; // Randomize initial x position within screen
-    p->y = 0;
-    p->vx = 0;
-    p->vy = sqrt(G * M / p->x);
-    p->px = (int)(p->x * scale);
-    p->py = (int)(p->y * scale);
+void init_particle(Particle *p, double x, double y, double vx, double vy, int color, int size) {
+    p->x = x;
+    p->y = y;
+    p->vx = vx;
+    p->vy = vy;
+    p->px = (int)(x * 1000);
+    p->py = (int)(y * 1000);
     p->size = size;
     p->active = 1;
     p->color = color;
 }
 
-void update_particle(Particle *p, double scale) {
-    double r = sqrt(p->x * p->x + p->y * p->y);
-    p->vx += (-G * M * p->x / (r * r * r)) * dt;
-    p->vy += (-G * M * p->y / (r * r * r)) * dt;
-
+void update_particle(Particle *p) {
     if (p->active) {
-        VGA_disc(p->px, p->py, p->size, black);
-        p->x += p->vx * dt * ENEMY_SPEED;
-        p->y += p->vy * dt * ENEMY_SPEED;
-        p->px = (int)(p->x * scale);
-        p->py = (int)(p->y * scale);
-        if (p->px < 0) p->px = 0;
-        if (p->px >= 640 - p->size) p->px = 640 - p->size;
-        VGA_disc(p->px, p->py, p->size, p->color);
+        VGA_disc(p->px / 1000, p->py / 1000, p->size, black);
+        p->x += p->vx * dt;
+        p->y += p->vy * dt;
+        p->px = (int)(p->x * 1000);
+        p->py = (int)(p->y * 1000);
+        VGA_disc(p->px / 1000, p->py / 1000, p->size, p->color);
     }
 }
 
 void update_player_position() {
-    VGA_disc(player.px, player.py, player.size, black);
-    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
-    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 10;
-    VGA_disc(player.px, player.py, player.size, player.color);
+    VGA_disc(player.px / 1000, player.py / 1000, player.size, black);
+    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE * 1000) player.px -= 10 * 1000;
+    if (key_pressed == 'd' && player.px < 640 * 1000 - PLAYER_SIZE * 1000) player.px += 10 * 1000;
+    VGA_disc(player.px / 1000, player.py / 1000, player.size, player.color);
 }
 
 void VGA_text(int x, int y, char *text_ptr) {
@@ -193,7 +187,8 @@ void VGA_disc(int x, int y, int r, short pixel_color) {
     for (row = -r; row <= r; row++) {
         for (col = -r; col <= r; col++) {
             if (col * col + row * row <= r * r) {
-                VGA_PIXEL(x + col, y + row, pixel_color);
+                if (x + col >= 0 && x + col < 640 && y + row >= 0 && y + row < 480) // Check boundaries
+                    VGA_PIXEL(x + col, y + row, pixel_color);
             }
         }
     }
@@ -251,12 +246,9 @@ int main(void) {
     double scale = 0.001;
     srand(time(NULL)); // Seed random number generator
 
-    init_particle(&player, 0, scale, green, PLAYER_SIZE);
-    player.px = 320;
-    player.py = 400;
-
+    init_particle(&player, 320 * scale, 400 * scale, 0, 0, green, PLAYER_SIZE);
     for (int i = 0; i < ENEMY_COUNT; i++) {
-        init_particle(&enemies[i], (rand() % 600 + 20) * scale, scale, (i == 0) ? yellow : cyan, ENEMY_RADIUS);
+        init_particle(&enemies[i], (rand() % 600 + 20) * scale, 0, 0, sqrt(G * M / ((rand() % 600 + 20) * scale)), (i == 0) ? yellow : cyan, ENEMY_RADIUS);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -276,7 +268,7 @@ int main(void) {
     while (1) {
         update_player_position();
         for (int i = 0; i < ENEMY_COUNT; i++) {
-            update_particle(&enemies[i], scale);
+            update_particle(&enemies[i]);
         }
         move_bullets();
         detect_collision();
@@ -287,3 +279,4 @@ int main(void) {
     close(fd);
     return 0;
 }
+
