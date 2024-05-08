@@ -6,3 +6,20 @@ try_2partcle.v
 graphic_2particle.c
 // C code with 2 particles moving in orbital
 
+game1.c
+//game which has x-y particle and one orbital particle
+
+hardik.c
+//code from hardik's gpt for full game
+
+game_shoot.c
+// complete game not working?
+
+game_orbit2.c --> should have been game_shoot2.c
+// code from koushani
+
+
+
+
+
+//Readme by Mahathi
