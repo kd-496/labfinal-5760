@@ -20,14 +20,6 @@
 #define M 5.972e24
 #define dt 10
 
-#define M_PI 3.14159265358979323846
-
-#define VGA_PIXEL(x,y,color) do {\
-    int *pixel_ptr;\
-    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * 640 + (x)) << 1));\
-    *(short *)pixel_ptr = (color);\
-} while (0)
-
 #define red         (0+(0<<5)+(31<<11))
 #define yellow      (0+(63<<5)+(31<<11))
 #define cyan        (31+(63<<5)+(0<<11))
@@ -36,21 +28,21 @@
 #define gray        (15+(31<<5)+(51<<11))
 #define green       (0+(63<<5)+(0<<11))
 
-#define PLAYER_SIZE 16
-#define BULLET_SIZE 8
+#define PLAYER_SIZE 20
+#define BULLET_SIZE 10
 #define BULLET_SPEED 15
 
-#define ORBIT_RADIUS_1 160
-#define ORBIT_RADIUS_2 240
-#define ORBIT_RADIUS_3 320
-#define ORBIT_RADIUS_4 400
-#define ORBIT_RADIUS_5 480
+#define ORBIT_RADIUS_1 100
+#define ORBIT_RADIUS_2 150
+#define ORBIT_RADIUS_3 200
+#define ORBIT_RADIUS_4 250
+#define ORBIT_RADIUS_5 300
 
-#define ORBIT_PERIOD_1 5000
-#define ORBIT_PERIOD_2 4000
-#define ORBIT_PERIOD_3 3000
-#define ORBIT_PERIOD_4 2000
-#define ORBIT_PERIOD_5 1000
+#define ORBIT_PERIOD_1 1000
+#define ORBIT_PERIOD_2 800
+#define ORBIT_PERIOD_3 600
+#define ORBIT_PERIOD_4 400
+#define ORBIT_PERIOD_5 200
 
 #define ORBIT_COLOR_1 yellow
 #define ORBIT_COLOR_2 cyan
@@ -261,7 +253,7 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
-    double scale = 1.0 / 5000000; // Adjusted scale for 640x480
+    double scale = 1.0 / 500000; // Adjusted scale for 640x480
     double periods[5] = {ORBIT_PERIOD_1, ORBIT_PERIOD_2, ORBIT_PERIOD_3, ORBIT_PERIOD_4, ORBIT_PERIOD_5};
 
     init_particle(&player, 0, scale, green, PLAYER_SIZE, 0);
@@ -269,7 +261,7 @@ int main(void) {
     player.py = 400;
 
     for (int i = 0; i < 5; i++) {
-        init_particle(&orbits[i], i * 80000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
+        init_particle(&orbits[i], i * 40000, scale, (i == 0) ? ORBIT_COLOR_1 : (i == 1) ? ORBIT_COLOR_2 : (i == 2) ? ORBIT_COLOR_3 : (i == 3) ? ORBIT_COLOR_4 : ORBIT_COLOR_5, 10, periods[i]);
     }
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
@@ -300,4 +292,3 @@ int main(void) {
     close(fd);
     return 0;
 }
-
