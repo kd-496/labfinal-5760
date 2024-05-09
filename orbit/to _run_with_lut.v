@@ -561,8 +561,8 @@ always @(posedge clk or posedge reset) begin
         angle <= angle + SPEED;
 
         // Calculate positions using fixed-point multiplication
-        x = cos_val * SCALE;
-        y = sin_val * SCALE;
+        x <= cos_val * SCALE;
+        y <= sin_val * SCALE;
 
         // Update positions relative to the center
         posX <= CENTER_X + x[31:0];
