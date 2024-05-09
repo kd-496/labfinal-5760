@@ -15,11 +15,11 @@
 #define HW_REGS_BASE          0xff200000
 #define HW_REGS_SPAN          0x00005000
 
-#define ENEMY_POS_BASE        0xC9001000  // Base address for enemy positions
-#define ENEMY_POS_SPAN        0x00000100  // Span to cover enough registers for multiple enemies
-#define ENEMY_POS_X           0x00000010  // Offset for X position
-#define ENEMY_POS_Y           0x00000020  // Offset for Y position
-#define ENEMY_POS_SIZE        0x00000010  // Size difference between subsequent enemy positions
+//#define ENEMY_POS_BASE        0xC9001000  // Base address for enemy positions
+//#define ENEMY_POS_SPAN        0x00000100  // Span to cover enough registers for multiple enemies
+#define ENEMY_POS_X           0x10  // Offset for X position
+#define ENEMY_POS_Y           0x20  // Offset for Y position
+//#define ENEMY_POS_SIZE        0x00000010  // Size difference between subsequent enemy positions
 
 #define red                   (0+(0<<5)+(31<<11))
 #define yellow                (0+(63<<5)+(31<<11))
@@ -65,8 +65,9 @@ volatile unsigned int *vga_pixel_ptr = NULL;
 void *vga_pixel_virtual_base;
 volatile unsigned int *vga_char_ptr = NULL;
 void *vga_char_virtual_base;
-volatile unsigned int *enemy_pos_ptr = NULL;
-void *enemy_pos_virtual_base;
+volatile unsigned int * enemy_pos_x_ptr = NULL;
+volatile unsigned int * enemy_pos_y_ptr = NULL;
+//void *enemy_pos_virtual_base;
 
 int fd;
 struct termios old_tio, new_tio;
@@ -95,7 +96,7 @@ void fire_bullet() {
 void move_bullets() {
     for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
-            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
+            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, blackaa);
             bullets[i].y -= BULLET_SPEED;
 
             if (bullets[i].y < 0) {
@@ -156,22 +157,22 @@ void init_particle(Particle *p, int color, int size) {
 }
 
 void update_enemies() {
-    if (enemy_pos_ptr == NULL) {
+    if (enemy_pos_x_ptr == NULL || enemy_pos_y_ptr == NULL) {
         printf("Enemy position pointer is not initialized.\n");
         return;
     }
 
     for (int i = 0; i < 4; i++) {
-        unsigned int x_index = (ENEMY_POS_X / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
-        unsigned int y_index = (ENEMY_POS_Y / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
+        // unsigned int x_index = (ENEMY_POS_X / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
+        // unsigned int y_index = (ENEMY_POS_Y / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
 
-        if (x_index >= (ENEMY_POS_SPAN / sizeof(unsigned int)) || y_index >= (ENEMY_POS_SPAN / sizeof(unsigned int))) {
-            printf("Index out of bounds error.\n");
-            continue;
-        }
+        // if (x_index >= (ENEMY_POS_SPAN / sizeof(unsigned int)) || y_index >= (ENEMY_POS_SPAN / sizeof(unsigned int))) {
+        //     printf("Index out of bounds error.\n");
+        //     continue;
+        // }
 
-        enemies[i].px = *(enemy_pos_ptr + x_index);
-        enemies[i].py = *(enemy_pos_ptr + y_index);
+        *(enemy_pos_x_ptr) = enemies[i].px;// + x_index);
+        *(enemy_pos_y_ptr) = enemies[i].py;// + y_index);
         if (enemies[i].active) {
             VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, enemies[i].color); // Draw enemy at new position
         }
@@ -260,7 +261,7 @@ int main(void) {
     vga_char_ptr = (unsigned int *)(vga_char_virtual_base);
 
     // Map VGA pixel buffer
-    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, SDRAM_BASE);
+    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, SDRAM_BASE);
     if (vga_pixel_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap3() failed...\n");
         close(fd);
@@ -268,14 +269,15 @@ int main(void) {
     }
     vga_pixel_ptr = (unsigned int *)(vga_pixel_virtual_base);
 
-    // Map enemy position registers
-    enemy_pos_virtual_base = mmap(NULL, ENEMY_POS_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, ENEMY_POS_BASE);
-    if (enemy_pos_virtual_base == MAP_FAILED) {
-        printf("ERROR: mmap4() failed...\n");
-        close(fd);
-        return 1;
-    }
-    enemy_pos_ptr = (unsigned int *)(enemy_pos_virtual_base);
+    // // Map enemy position registers
+    // enemy_pos_virtual_base = mmap(NULL, ENEMY_POS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, ENEMY_POS_BASE);
+    // if (enemy_pos_virtual_base == MAP_FAILED) {
+    //     printf("ERROR: mmap4() failed...\n");
+    //     close(fd);
+    //     return 1;
+    // }
+    enemy_pos_x_ptr = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_X);
+    enemy_pos_y_ptr = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_Y);
 
     // Initialize the text on the VGA screen
     char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
@@ -323,11 +325,11 @@ int main(void) {
         usleep(50000);  // 50 ms delay
     }
 
-    tcsetattr(0, TCSANOW, &old_tio);
-    munmap(enemy_pos_virtual_base, ENEMY_POS_SPAN);
-    munmap(vga_pixel_virtual_base, SDRAM_SPAN);
-    munmap(vga_char_virtual_base, FPGA_CHAR_SPAN);
-    munmap(h2p_lw_virtual_base, HW_REGS_SPAN);
+    // tcsetattr(0, TCSANOW, &old_tio);
+    // //munmap(enemy_pos_virtual_base, ENEMY_POS_SPAN);
+    // munmap(vga_pixel_virtual_base, SDRAM_SPAN);
+    // munmap(vga_char_virtual_base, FPGA_CHAR_SPAN);
+    // munmap(h2p_lw_virtual_base, HW_REGS_SPAN);
     close(fd);
     return 0;
 }
