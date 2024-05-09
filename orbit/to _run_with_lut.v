@@ -528,17 +528,20 @@ module EnemyOrbitalMotion(
 );
 
 // Parameters
-parameter CENTER_X = 32'h00008000;  // Center of orbit X
-parameter CENTER_Y = 32'h00008000;  // Center of orbit Y
-parameter RADIUS = 32'h00004000;    // Radius of orbit
-parameter SPEED = 8'd1;             // Speed of orbit (1 degree per clock)
-parameter SCALE = 32'h00002000;     // Scaling factor for LUT output
+parameter CENTER_X = 32'd320;  // Center of orbit X
+parameter CENTER_Y = 32'd240;  // Center of orbit Y
+parameter SIZE_X = 32'd640;
+parameter SIZE_Y = 32'd480;
+parameter RADIUS = 100;    // Radius of orbit
+parameter SPEED = 1;             // Speed of orbit (1 degree per clock)
+//parameter SCALE = ;     // Scaling factor for LUT output
 
 // Internal signals
 reg [7:0] angle = 0;                // Angle in degrees
 wire signed [15:0] sin_val;         // Sine value from LUT
 wire signed [15:0] cos_val;         // Cosine value from LUT
 reg signed [31:0] x, y;             // Intermediate X and Y values
+reg [31:0] cnt; 
 
 // Instantiate sine and cosine LUTs
 sineTable u_sineTable (
@@ -556,13 +559,20 @@ always @(posedge clk or posedge reset) begin
         angle <= 0;
         posX <= CENTER_X + RADIUS;
         posY <= CENTER_Y;
+		  cnt <= 0;
     end else begin
-        // Increment angle for orbit
-        angle <= angle + SPEED;
+	     if (cnt < 32'b110000110101000000) begin
+		     cnt <= cnt + 1;
+		  end
+		  else begin
+         // Increment angle for orbit
+         angle <= angle + SPEED;
+			cnt <= 0;
+		  end	
 
         // Calculate positions using fixed-point multiplication
-        x <= cos_val * SCALE;
-        y <= sin_val * SCALE;
+        x <= cos_val * RADIUS >> 13 ;
+        y <= sin_val * RADIUS >> 13 ;
 
         // Update positions relative to the center
         posX <= CENTER_X + x[31:0];
