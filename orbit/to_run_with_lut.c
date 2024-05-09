@@ -16,8 +16,11 @@
 #define HW_REGS_BASE          0xff200000
 #define HW_REGS_SPAN          0x00005000
 
-#define ENEMY_POS_BASE        0xC9001000  // Example base address for enemy positions
-#define ENEMY_POS_SPAN        0x00000100  // Span to cover enough registers for X, Y positions for multiple enemies
+#define ENEMY_POS_BASE        0xC9001000  // Base address for enemy positions
+#define ENEMY_POS_SPAN        0x00000100  // Span to cover enough registers for multiple enemies
+#define ENEMY_POS_X           0x00000010  // Offset for X position
+#define ENEMY_POS_Y           0x00000020  // Offset for Y position
+#define ENEMY_POS_SIZE        0x00000010  // Size difference between subsequent enemy positions
 
 #define red                   (0+(0<<5)+(31<<11))
 #define yellow                (0+(63<<5)+(31<<11))
@@ -156,8 +159,8 @@ void init_particle(Particle *p, int color, int size) {
 
 void update_enemies() {
     for (int i = 0; i < 4; i++) {
-        enemies[i].px = *(enemy_pos_ptr + i * 2);     // Assume X is at offset 0, 2, 4, 6...
-        enemies[i].py = *(enemy_pos_ptr + i * 2 + 1); // Assume Y is at offset 1, 3, 5, 7...
+        enemies[i].px = *(enemy_pos_ptr + (ENEMY_POS_X / sizeof(unsigned int)) + i * ENEMY_POS_SIZE / sizeof(unsigned int));
+        enemies[i].py = *(enemy_pos_ptr + (ENEMY_POS_Y / sizeof(unsigned int)) + i * ENEMY_POS_SIZE / sizeof(unsigned int));
         if (enemies[i].active) {
             VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, enemies[i].color); // Draw enemy at new position
         }
@@ -244,7 +247,7 @@ int main(void) {
 
     vga_char_ptr = (unsigned int *)(vga_char_virtual_base);
 
-    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, SDRAM_BASE);
+    vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, SDRAM_BASE);
     if (vga_pixel_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap3() failed...\n");
         close(fd);
@@ -253,12 +256,11 @@ int main(void) {
 
     vga_pixel_ptr = (unsigned int *)(vga_pixel_virtual_base);
 
-    enemy_pos_virtual_base = mmap(NULL, ENEMY_POS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, ENEMY_POS_BASE);
+    enemy_pos_virtual_base = mmap(NULL, ENEMY_POS_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, ENEMY_POS_BASE);
     if (enemy_pos_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap4() failed...\n");
         close(fd);
-        return 1;
-    }
+        return
 
     enemy_pos_ptr = (unsigned int *)(enemy_pos_virtual_base);
 
