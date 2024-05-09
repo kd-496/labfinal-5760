@@ -7,6 +7,7 @@
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
+#include <sys/time.h>
 
 #define SDRAM_BASE            0xC0000000
 #define SDRAM_SPAN            0x04000000
@@ -19,6 +20,7 @@
 //#define ENEMY_POS_SPAN        0x00000100  // Span to cover enough registers for multiple enemies
 #define ENEMY_POS_X           0x10  // Offset for X position
 #define ENEMY_POS_Y           0x20  // Offset for Y position
+#define ENEMY_NUM             7
 //#define ENEMY_POS_SIZE        0x00000010  // Size difference between subsequent enemy positions
 
 #define red                   (0+(0<<5)+(31<<11))
@@ -35,9 +37,13 @@
 #define BULLET_SIZE           4
 #define BULLET_SPEED          15
 
+#define x_size                640
+#define y_size                480
+#define grey                  gray
+
 #define VGA_PIXEL(x, y, color) do { \
     int *pixel_ptr; \
-    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * 640 + (x)) << 1)); \
+    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * x_size + (x)) << 1)); \
     *(short *)pixel_ptr = (color); \
 } while (0)
 
@@ -67,15 +73,29 @@ volatile unsigned int *vga_char_ptr = NULL;
 void *vga_char_virtual_base;
 volatile unsigned int * enemy_pos_x_ptr = NULL;
 volatile unsigned int * enemy_pos_y_ptr = NULL;
+volatile float * enemy_pos_x_external_connection = NULL;
+volatile float * enemy_pos_y_external_connection = NULL;
+volatile float * enemyPosX = NULL;
+volatile float * enemyPosY = NULL;
 //void *enemy_pos_virtual_base;
+
+//enemy_pos_x_ptr = (unsigned int *)(ENEMY_POS_X + enemy_pos_x_external_connection);
+//enemy_pos_y_ptr = (unsigned int *)(ENEMY_POS_Y + enemy_pos_y_external_connection);
 
 int fd;
 struct termios old_tio, new_tio;
 char key_pressed = '\0';
-Particle player, enemies[4]; // Array to hold multiple enemies
+
+Particle player; 
+Particle enemies[ENEMY_NUM]; // Array to hold multiple enemies
 Bullet bullets[10];
+
 int score = 0; // Player score
 char score_text[50];
+char time_text[50];
+
+struct timeval start, end;
+long time_used;
 
 void init_bullet(Bullet *b, int x, int y, int color) {
     b->x = x;
@@ -96,7 +116,7 @@ void fire_bullet() {
 void move_bullets() {
     for (int i = 0; i < 10; i++) {
         if (bullets[i].active) {
-            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, blackaa);
+            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
             bullets[i].y -= BULLET_SPEED;
 
             if (bullets[i].y < 0) {
@@ -111,7 +131,7 @@ void move_bullets() {
 void detect_collision() {
     for (int b = 0; b < 10; b++) {
         if (bullets[b].active) {
-            for (int e = 0; e < 4; e++) {
+            for (int e = 0; e < ENEMY_NUM; e++) {
                 if (enemies[e].active && bullets[b].x >= enemies[e].px - enemies[e].size &&
                     bullets[b].x <= enemies[e].px + enemies[e].size &&
                     bullets[b].y >= enemies[e].py - enemies[e].size &&
@@ -126,14 +146,16 @@ void detect_collision() {
     }
 }
 
-void display_score() {
+void display_score() { // score & time
     sprintf(score_text, "Score: %d", score);
-    VGA_text(10, 4, score_text);
+    VGA_text(10, 6, score_text);
+    sprintf(time_text, "Time used: %d seconds", time_used);
+    VGA_text(10, 7, time_text);
 }
 
-void check_game_over() {
+int check_game_over() {
     int all_inactive = 1;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < ENEMY_NUM; i++) {
         if (enemies[i].active) {
             all_inactive = 0;
             break;
@@ -141,9 +163,13 @@ void check_game_over() {
     }
     if (all_inactive) {
         VGA_text_clear();
-        VGA_text(10, 15, "Game Over! Final Score: ");
+        VGA_text(10, 12, "Game Over! Final ");
         VGA_text(32, 15, score_text);
+        VGA_text(10, 16, " ");
+        VGA_text(32, 16, time_text);
+        return 1;
     }
+    return 0;
 }
 
 void init_particle(Particle *p, int color, int size) {
@@ -156,13 +182,16 @@ void init_particle(Particle *p, int color, int size) {
     p->color = color;
 }
 
+    float past_coord_x [ENEMY_NUM] = {0.0, 0.0, 0.0, 0.0};
+    float past_coord_y [ENEMY_NUM] = {0.0, 0.0, 0.0, 0.0};
+
 void update_enemies() {
     if (enemy_pos_x_ptr == NULL || enemy_pos_y_ptr == NULL) {
         printf("Enemy position pointer is not initialized.\n");
         return;
     }
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < ENEMY_NUM; i++) {
         // unsigned int x_index = (ENEMY_POS_X / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
         // unsigned int y_index = (ENEMY_POS_Y / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
 
@@ -170,9 +199,22 @@ void update_enemies() {
         //     printf("Index out of bounds error.\n");
         //     continue;
         // }
+        VGA_disc(past_coord_x[i], past_coord_y[i], enemies[i].size, black);
 
-        *(enemy_pos_x_ptr) = enemies[i].px;// + x_index);
-        *(enemy_pos_y_ptr) = enemies[i].py;// + y_index);
+        enemies[i].px =  *(enemy_pos_x_ptr) + 20 * i;
+        enemies[i].py =  *(enemy_pos_y_ptr) + 5 * i;
+
+        if (i == 0 || i == 2) { enemies[i].px = x_size - enemies[i].px/2; }  //making it seem a little different
+        if (i == 1 || i == 2) { enemies[i].py = y_size - enemies[i].py/2; }
+        if (i == 4 || i == 6) { enemies[i].px = x_size/2 - enemies[i].px/3; }
+        if (i == 5 || i == 6) { enemies[i].py = y_size/4 - enemies[i].px/3; }
+
+        enemies[i].py = enemies[i].py * 0.8;
+
+        past_coord_x[i] = enemies[i].px;
+        past_coord_y[i] = enemies[i].py;
+        //*(enemy_pos_x_ptr) = enemies[i].px;// + x_index);
+        //*(enemy_pos_y_ptr) = enemies[i].py;// + y_index);                                    // is the left and right values in opposite place?
         if (enemies[i].active) {
             VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, enemies[i].color); // Draw enemy at new position
         }
@@ -182,9 +224,10 @@ void update_enemies() {
 void update_player_position() {
     VGA_disc(player.px, player.py, player.size, black);
     if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
-    if (key_pressed == 'd' && player.px < 640 - PLAYER_SIZE) player.px += 10;
+    if (key_pressed == 'd' && player.px < x_size - PLAYER_SIZE) player.px += 10;
     if (key_pressed == 'w' && player.py > 0 + PLAYER_SIZE) player.py -= 10;
-    if (key_pressed == 's' && player.py < 480 - PLAYER_SIZE) player.py += 10;
+    if (key_pressed == 's' && player.py < y_size - PLAYER_SIZE) player.py += 10;
+    //if (key_pressed == 'x') player.px = 320, player.py = 440;  // reset player place
     VGA_disc(player.px, player.py, player.size, player.color);
 }
 
@@ -276,29 +319,44 @@ int main(void) {
     //     close(fd);
     //     return 1;
     // }
-    enemy_pos_x_ptr = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_X);
+    
+    enemyPosX = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_X); 
+    enemyPosY = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_Y);
+
+    enemy_pos_x_ptr = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_X); 
     enemy_pos_y_ptr = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_Y);
+
+    enemy_pos_x_external_connection = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_X); 
+    enemy_pos_y_external_connection = (unsigned int *)(h2p_lw_virtual_base + ENEMY_POS_Y);
+
 
     // Initialize the text on the VGA screen
     char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
     char text_bottom_row[40] = "Cornell ece5760\0";
     char text_next[40] = "Shooting Game\0";
+    char text_four[80] = "move with 'w' 'a' 's' 'd'\0";
+    char text_five[80] = "stop & fire upward with 'f'\0";
 
-    VGA_box(0, 0, 639, 479, black);
+    VGA_box(0, 0, x_size - 1, y_size - 1, black);
     VGA_text_clear();
     VGA_text(10, 1, text_top_row);
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
+    VGA_text(10, 4, text_four);
+    VGA_text(10, 5, text_five);
 
     // Initialize the player and enemies
     init_particle(&player, green, PLAYER_SIZE);
     player.px = 320;
     player.py = 440; // Place player at the bottom center
 
-    init_particle(&enemies[0], yellow, 12); // Enemy1
-    init_particle(&enemies[1], cyan, 12);   // Enemy2
-    init_particle(&enemies[2], blue, 15);   // Enemy3
-    init_particle(&enemies[3], magenta, 15); // Enemy4
+    init_particle(&enemies[0], yellow, 8); // Enemy1
+    init_particle(&enemies[1], cyan, 8);   // Enemy2
+    init_particle(&enemies[2], blue, 7);   // Enemy3
+    init_particle(&enemies[3], magenta, 6); // Enemy4
+    init_particle(&enemies[4], red, 8); 
+    init_particle(&enemies[5], white, 8);       
+    init_particle(&enemies[6], grey, 7);       
 
     for (int i = 0; i < 10; i++) bullets[i].active = 0;
 
@@ -314,22 +372,24 @@ int main(void) {
     pthread_t tid;
     pthread_create(&tid, NULL, keyboard_thread, NULL);
 
+    gettimeofday(&start, NULL);
+    gettimeofday(&end, NULL);
+
+    int sign_ = 0;
     // Main game loop
     while (1) {
         update_player_position();
         update_enemies(); // Update enemy positions based on FPGA computations
         move_bullets();
+        if (sign_  == 1) { break; }
         detect_collision();
         display_score();
-        check_game_over();
-        usleep(50000);  // 50 ms delay
+        if (check_game_over() == 1) { sign_ = 1; }
+        gettimeofday(&end, NULL);
+        time_used = (end.tv_sec - start.tv_sec);
+        usleep(100000);  // 50 ms delay
     }
 
-    // tcsetattr(0, TCSANOW, &old_tio);
-    // //munmap(enemy_pos_virtual_base, ENEMY_POS_SPAN);
-    // munmap(vga_pixel_virtual_base, SDRAM_SPAN);
-    // munmap(vga_char_virtual_base, FPGA_CHAR_SPAN);
-    // munmap(h2p_lw_virtual_base, HW_REGS_SPAN);
     close(fd);
     return 0;
 }
