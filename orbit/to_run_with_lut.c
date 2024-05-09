@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
-#include <sys/time.h>
 #include <math.h>
 #include <termios.h>
 #include <pthread.h>
@@ -44,7 +43,6 @@
 
 typedef struct {
     double x, y;
-    double vx, vy;
     int px, py;
     int size;
     int active;
@@ -113,8 +111,10 @@ void detect_collision() {
     for (int b = 0; b < 10; b++) {
         if (bullets[b].active) {
             for (int e = 0; e < 4; e++) {
-                if (enemies[e].active && bullets[b].x >= enemies[e].px - enemies[e].size && bullets[b].x <= enemies[e].px + enemies[e].size &&
-                    bullets[b].y >= enemies[e].py - enemies[e].size && bullets[b].y <= enemies[e].py + enemies[e].size) {
+                if (enemies[e].active && bullets[b].x >= enemies[e].px - enemies[e].size &&
+                    bullets[b].x <= enemies[e].px + enemies[e].size &&
+                    bullets[b].y >= enemies[e].py - enemies[e].size &&
+                    bullets[b].y <= enemies[e].py + enemies[e].size) {
                     enemies[e].active = 0;
                     bullets[b].active = 0;
                     score += 100; // Increase score
@@ -148,8 +148,6 @@ void check_game_over() {
 void init_particle(Particle *p, int color, int size) {
     p->x = 0;
     p->y = 0;
-    p->vx = 0;
-    p->vy = 0;
     p->px = 0;
     p->py = 0;
     p->size = size;
@@ -158,9 +156,22 @@ void init_particle(Particle *p, int color, int size) {
 }
 
 void update_enemies() {
+    if (enemy_pos_ptr == NULL) {
+        printf("Enemy position pointer is not initialized.\n");
+        return;
+    }
+
     for (int i = 0; i < 4; i++) {
-        enemies[i].px = *(enemy_pos_ptr + (ENEMY_POS_X / sizeof(unsigned int)) + i * ENEMY_POS_SIZE / sizeof(unsigned int));
-        enemies[i].py = *(enemy_pos_ptr + (ENEMY_POS_Y / sizeof(unsigned int)) + i * ENEMY_POS_SIZE / sizeof(unsigned int));
+        unsigned int x_index = (ENEMY_POS_X / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
+        unsigned int y_index = (ENEMY_POS_Y / sizeof(unsigned int)) + i * (ENEMY_POS_SIZE / sizeof(unsigned int));
+
+        if (x_index >= (ENEMY_POS_SPAN / sizeof(unsigned int)) || y_index >= (ENEMY_POS_SPAN / sizeof(unsigned int))) {
+            printf("Index out of bounds error.\n");
+            continue;
+        }
+
+        enemies[i].px = *(enemy_pos_ptr + x_index);
+        enemies[i].py = *(enemy_pos_ptr + y_index);
         if (enemies[i].active) {
             VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, enemies[i].color); // Draw enemy at new position
         }
@@ -231,6 +242,7 @@ int main(void) {
         return 1;
     }
 
+    // Map the Lightweight Bridge (LW) region
     h2p_lw_virtual_base = mmap(NULL, HW_REGS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, HW_REGS_BASE);
     if (h2p_lw_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap1() failed...\n");
@@ -238,32 +250,34 @@ int main(void) {
         return 1;
     }
 
+    // Map VGA character buffer
     vga_char_virtual_base = mmap(NULL, FPGA_CHAR_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, FPGA_CHAR_BASE);
     if (vga_char_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap2() failed...\n");
         close(fd);
         return 1;
     }
-
     vga_char_ptr = (unsigned int *)(vga_char_virtual_base);
 
+    // Map VGA pixel buffer
     vga_pixel_virtual_base = mmap(NULL, SDRAM_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, SDRAM_BASE);
     if (vga_pixel_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap3() failed...\n");
         close(fd);
         return 1;
     }
-
     vga_pixel_ptr = (unsigned int *)(vga_pixel_virtual_base);
 
+    // Map enemy position registers
     enemy_pos_virtual_base = mmap(NULL, ENEMY_POS_SPAN, (PROT_READ | PROT WRITE), MAP_SHARED, fd, ENEMY_POS_BASE);
     if (enemy_pos_virtual_base == MAP_FAILED) {
         printf("ERROR: mmap4() failed...\n");
         close(fd);
-        return
-
+        return 1;
+    }
     enemy_pos_ptr = (unsigned int *)(enemy_pos_virtual_base);
 
+    // Initialize the text on the VGA screen
     char text_top_row[40] = "DE1-SoC ARM/FPGA\0";
     char text_bottom_row[40] = "Cornell ece5760\0";
     char text_next[40] = "Shooting Game\0";
@@ -274,6 +288,7 @@ int main(void) {
     VGA_text(10, 2, text_bottom_row);
     VGA_text(10, 3, text_next);
 
+    // Initialize the player and enemies
     init_particle(&player, green, PLAYER_SIZE);
     player.px = 320;
     player.py = 440; // Place player at the bottom center
@@ -297,6 +312,7 @@ int main(void) {
     pthread_t tid;
     pthread_create(&tid, NULL, keyboard_thread, NULL);
 
+    // Main game loop
     while (1) {
         update_player_position();
         update_enemies(); // Update enemy positions based on FPGA computations
@@ -309,6 +325,9 @@ int main(void) {
 
     tcsetattr(0, TCSANOW, &old_tio);
     munmap(enemy_pos_virtual_base, ENEMY_POS_SPAN);
+    munmap(vga_pixel_virtual_base, SDRAM_SPAN);
+    munmap(vga_char_virtual_base, FPGA_CHAR_SPAN);
+    munmap(h2p_lw_virtual_base, HW_REGS_SPAN);
     close(fd);
     return 0;
 }
