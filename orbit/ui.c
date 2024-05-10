@@ -37,12 +37,6 @@
 #define x_size                640
 #define y_size                480
 
-#define VGA_PIXEL(x, y, color) do { \
-    int *pixel_ptr; \
-    pixel_ptr = (int *)((char *)vga_pixel_ptr + (((y) * x_size + (x)) << 1)); \
-    *(short *)pixel_ptr = (color); \
-} while (0)
-
 typedef struct {
     double x, y;
     int px, py;
@@ -57,109 +51,22 @@ typedef struct {
     int color;
 } Bullet;
 
-void VGA_text(int, int, char *);
-void VGA_text_clear();
 void VGA_box(int, int, int, int, short);
 void VGA_disc(int, int, int, short);
-
-void *h2p_lw_virtual_base;
-volatile unsigned int *vga_pixel_ptr = NULL;
-void *vga_pixel_virtual_base;
-volatile unsigned int *vga_char_ptr = NULL;
-void *vga_char_virtual_base;
-volatile unsigned int * enemy_pos_x_ptr = NULL;
-volatile unsigned int * enemy_pos_y_ptr = NULL;
+void *keyboard_thread(void *);
 
 int fd;
-struct termios old_tio, new_tio;
-char key_pressed = '\0';
-int game_started = 0;
+volatile unsigned int *vga_pixel_ptr = NULL;
+volatile unsigned int *vga_char_ptr = NULL;
+volatile unsigned int *enemy_pos_x_ptr = NULL;
+volatile unsigned int *enemy_pos_y_ptr = NULL;
 
 Particle player; 
 Particle enemies[ENEMY_NUM];
 Bullet bullets[10];
 
-int score = 0;
-char score_text[50];
-char time_text[50];
-
-struct timeval start, end;
-long time_used;
-
-void init_bullet(Bullet *b, int x, int y, int color) {
-    b->x = x;
-    b->y = y;
-    b->active = 1;
-    b->color = color;
-}
-
-void fire_bullet() {
-    for (int i = 0; i < 10; i++) {
-        if (!bullets[i].active) {
-            init_bullet(&bullets[i], player.px, player.py - PLAYER_SIZE, white);
-            break;
-        }
-    }
-}
-
-void move_bullets() {
-    for (int i = 0; i < 10; i++) {
-        if (bullets[i].active) {
-            VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, black);
-            bullets[i].y -= BULLET_SPEED;
-
-            if (bullets[i].y < 0) {
-                bullets[i].active = 0;
-            } else {
-                VGA_box(bullets[i].x, bullets[i].y, bullets[i].x + BULLET_SIZE, bullets[i].y + BULLET_SIZE, bullets[i].color);
-            }
-        }
-    }
-}
-
-void detect_collision() {
-    for (int b = 0; b < 10; b++) {
-        if (bullets[b].active) {
-            for (int e = 0; e < ENEMY_NUM; e++) {
-                if (enemies[e].active && bullets[b].x >= enemies[e].px - enemies[e].size &&
-                    bullets[b].x <= enemies[e].px + enemies[e].size &&
-                    bullets[b].y >= enemies[e].py - enemies[e].size &&
-                    bullets[b].y <= enemies[e].py + enemies[e].size) {
-                    enemies[e].active = 0;
-                    bullets[b].active = 0;
-                    score += 100;
-                    VGA_disc(enemies[e].px, enemies[e].py, enemies[e].size, black);
-                }
-            }
-        }
-    }
-}
-
-void display_score() {
-    sprintf(score_text, "Score: %d", score);
-    VGA_text(10, 6, score_text);
-    sprintf(time_text, "Time used: %d seconds", time_used);
-    VGA_text(10, 7, time_text);
-}
-
-int check_game_over() {
-    int all_inactive = 1;
-    for (int i = 0; i < ENEMY_NUM; i++) {
-        if (enemies[i].active) {
-            all_inactive = 0;
-            break;
-        }
-    }
-    if (all_inactive) {
-        VGA_text_clear();
-        VGA_text(10, 12, "Game Over! Final ");
-        VGA_text(32, 15, score_text);
-        VGA_text(10, 16, " ");
-        VGA_text(32, 16, time_text);
-        return 1;
-    }
-    return 0;
-}
+char key_pressed = '\0';
+int game_started = 0; // Added flag to indicate game start
 
 void init_particle(Particle *p, int color, int size) {
     p->x = 0;
@@ -171,53 +78,11 @@ void init_particle(Particle *p, int color, int size) {
     p->color = color;
 }
 
-void update_enemies() {
-    if (!game_started) return;
-
-    for (int i = 0; i < ENEMY_NUM; i++) {
-        VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, black);
-
-        enemies[i].px = rand() % (x_size - 20); // Randomize X position
-        enemies[i].py += 2; // Move enemies down
-
-        if (enemies[i].py > y_size + enemies[i].size) { // Respawn enemies when they go below the screen
-            enemies[i].py = -enemies[i].size;
-        }
-
-        if (enemies[i].active) {
-            VGA_disc(enemies[i].px, enemies[i].py, enemies[i].size, enemies[i].color);
-        }
-    }
-}
-
-void update_player_position() {
-    VGA_disc(player.px, player.py, player.size, black);
-    if (key_pressed == 'a' && player.px > 0 + PLAYER_SIZE) player.px -= 10;
-    if (key_pressed == 'd' && player.px < x_size - PLAYER_SIZE) player.px += 10;
-    if (key_pressed == 'w' && player.py > 0 + PLAYER_SIZE) player.py -= 10;
-    if (key_pressed == 's' && player.py < y_size - PLAYER_SIZE) player.py += 10;
-    VGA_disc(player.px, player.py, player.size, player.color);
-}
-
-void VGA_text(int x, int y, char *text_ptr) {
-    volatile char *character_buffer = (char *)vga_char_ptr;
-    int offset = (y << 7) + x;
-    while (*text_ptr) {
-        *(character_buffer + offset) = *(text_ptr);
-        ++text_ptr;
-        ++offset;
-    }
-}
-
-void VGA_text_clear() {
-    volatile char *character_buffer = (char *)vga_char_ptr;
-    int offset, x, y;
-    for (x = 0; x < 79; x++) {
-        for (y = 0; y < 59; y++) {
-            offset = (y << 7) + x;
-            *(character_buffer + offset) = ' ';
-        }
-    }
+void init_bullet(Bullet *b, int x, int y, int color) {
+    b->x = x;
+    b->y = y;
+    b->active = 1;
+    b->color = color;
 }
 
 void VGA_box(int x1, int y1, int x2, int y2, short pixel_color) {
@@ -245,7 +110,6 @@ void *keyboard_thread(void *arg) {
         key_pressed = getchar();
         if (key_pressed == ' ') { // Start the game when space bar is pressed
             game_started = 1;
-            gettimeofday(&start, NULL);
         }
         if (key_pressed == 'f') fire_bullet();
     }
@@ -253,10 +117,15 @@ void *keyboard_thread(void *arg) {
 }
 
 int main(void) {
+    // Memory mapping
     if ((fd = open("/dev/mem", (O_RDWR | O_SYNC))) == -1) {
         printf("ERROR: could not open \"/dev/mem\"...\n");
         return 1;
     }
+
+    void *h2p_lw_virtual_base;
+    void *vga_pixel_virtual_base;
+    void *vga_char_virtual_base;
 
     // Map the Lightweight Bridge (LW) region
     h2p_lw_virtual_base = mmap(NULL, HW_REGS_SPAN, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, HW_REGS_BASE);
@@ -289,33 +158,40 @@ int main(void) {
 
     // Initialize the text on the VGA screen
     VGA_box(0, 0, x_size - 1, y_size - 1, black);
-    VGA_text_clear();
 
     // Display "Start" message in a big cool font
-    VGA_text(180, 200, "██████╗░███████╗███╗░░░███╗███████╗██╗░░░██╗███████╗");
-    VGA_text(180, 201, "██╔══██╗██╔════╝████╗░████║██╔════╝██║░░░██║██╔════╝");
-    VGA_text(180, 202, "██║░░██║█████╗░░██╔████╔██║█████╗░░╚██╗░██╔╝█████╗░░");
-    VGA_text(180, 203, "██║░░██║██╔══╝░░██║╚██╔╝██║██╔══╝░░░╚████╔╝░██╔══╝░░");
-    VGA_text(180, 204, "██████╔╝███████╗██║░╚═╝░██║███████╗░░╚██╔╝░░███████╗");
-    VGA_text(180, 205, "╚═════╝░╚══════╝╚═╝░░░░░╚═╝╚══════╝░░░╚═╝░░░╚══════╝");
-    VGA_text(240, 210, "Press SPACE to start");
+    VGA_disc(180, 200, 8, white);
+    VGA_disc(180, 201, 8, white);
+    VGA_disc(180, 202, 8, white);
+    VGA_disc(180, 203, 8, white);
+    VGA_disc(180, 204, 8, white);
+    VGA_disc(180, 205, 8, white);
+    VGA_disc(240, 210, 5, white); // Adjust size of space
+
+    VGA_text(180, 200, "██████╗░███████╗███╗░░░███╗███████╗██╗░░██╗");
+    VGA_text(180, 201, "██╔══██╗██╔════╝████╗░████║██╔════╝██║░░██║");
+    VGA_text(180, 202, "██████╔╝█████╗░░██╔████╔██║█████╗░░███████║");
+    VGA_text(180, 203, "██╔═══╝░██╔══╝░░██║╚██╔╝██║██╔══╝░░██╔══██║");
+    VGA_text(180, 204, "██║░░░░░███████╗██║░╚═╝░██║███████╗██║░░██║");
+    VGA_text(180, 205, "╚═╝░░░░░╚══════╝╚═╝░░░░░╚═╝╚══════╝╚═╝░░╚═╝");
+    VGA_text(240, 210, "Press space to start");
 
     // Initialize the player and enemies
     init_particle(&player, green, PLAYER_SIZE);
     player.px = 320;
-    player.py = 440;
+    player.py = 440; // Place player at the bottom center
 
-    init_particle(&enemies[0], yellow, 8);
-    init_particle(&enemies[1], cyan, 8);
-    init_particle(&enemies[2], blue, 7);
-    init_particle(&enemies[3], magenta, 6);
-    init_particle(&enemies[4], red, 8); 
-    init_particle(&enemies[5], white, 8);       
-    init_particle(&enemies[6], gray, 7);       
+    // Initialize enemies
+    for (int i = 0; i < ENEMY_NUM; i++) {
+        init_particle(&enemies[i], red, 8);
+    }
 
-    for (int i = 0; i < 10; i++) bullets[i].active = 0;
+    for (int i = 0; i < 10; i++) {
+        bullets[i].active = 0;
+    }
 
     // Initialize keyboard settings
+    struct termios old_tio, new_tio;
     tcgetattr(0, &old_tio);
     new_tio = old_tio;
     new_tio.c_lflag &= ~ICANON;
@@ -324,8 +200,14 @@ int main(void) {
     new_tio.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &new_tio);
 
+    // Create keyboard thread
     pthread_t tid;
     pthread_create(&tid, NULL, keyboard_thread, NULL);
+
+    // Wait for the space bar to be pressed to start the game
+    while (!game_started) {
+        usleep(100000); // 100 ms delay
+    }
 
     // Main game loop
     while (1) {
@@ -338,6 +220,7 @@ int main(void) {
         usleep(50000);  // 50 ms delay
     }
 
+    // Cleanup and exit
     close(fd);
     return 0;
 }
