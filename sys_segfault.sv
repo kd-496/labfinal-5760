@@ -621,7 +621,7 @@ module Orbit_Path //orbit_solver_polar //angle & sine bits match?
     //input start,
     	//output signed [31:0] x,
 	   //output signed [31:0] y,
-		output [8:0] angle,
+	output [7:0] angle,
 		output [31:0] r
 	 //output [26:0] r,
     //output reg [26:0] ang,
