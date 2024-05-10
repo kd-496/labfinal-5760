@@ -102,6 +102,15 @@ void draw_start_screen() {
     VGA_text(28, 15, "Space-Shooter");
     VGA_text(20, 20, "Press Spacebar to start");
 }
+void init_particle(Particle *p, int color, int size) {
+    p->x = 0;
+    p->y = 0;
+    p->px = 0;
+    p->py = 0;
+    p->size = size;
+    p->active = 1;
+    p->color = color;
+}
 
 void wait_for_spacebar() {
     struct termios info;
