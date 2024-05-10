@@ -1,180 +1,172 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/time.h>
 
-#define MAX_BULLETS 10
 #define MAX_ENEMIES 5
-#define PLAYER_X 40
-#define PLAYER_Y 20
+#define MAX_BULLETS 10
+#define GAME_AREA_HEIGHT 10
+#define GAME_AREA_WIDTH 30
 
 typedef struct {
-    int x, y, active;
-} Bullet;
+    int x, y;
+    int isActive;
+} GameObject;
 
-typedef struct {
-    int x, y, active;
-} Enemy;
-
-// Global game variables
-Bullet bullets[MAX_BULLETS];
-Enemy enemies[MAX_ENEMIES];
-int game_running = 1;
-int score = 0;
+GameObject player;
+GameObject enemies[MAX_ENEMIES];
+GameObject bullets[MAX_BULLETS];
+int gameRunning = 1;
 
 // Function declarations
-void initialize_game();
-void run_game();
-void cleanup_game();
-void *keyboard_thread(void *arg);
-void update_bullets();
-void update_enemies();
-void draw_game();
-void check_collisions();
-void spawn_enemy();
-void fire_bullet();
+void initializeGame();
+void drawGameArea();
+void *inputThread(void *param);
+void updateGame();
+void fireBullet();
+void moveBullets();
+void checkCollisions();
 
 int main() {
-    pthread_t tid;
+    pthread_t threadId;
 
-    // Initialize the game
-    initialize_game();
+    // Initialize game objects
+    initializeGame();
 
-    // Start the keyboard input thread
-    pthread_create(&tid, NULL, keyboard_thread, NULL);
+    // Start input thread
+    pthread_create(&threadId, NULL, inputThread, NULL);
 
-    // Game main loop
-    run_game();
+    // Game loop
+    while (gameRunning) {
+        system("clear");
+        drawGameArea();
+        updateGame();
+        usleep(200000); // Sleep to control game speed
+    }
 
-    // Wait for the keyboard thread to finish
-    pthread_join(tid, NULL);
-
-    // Cleanup and exit
-    cleanup_game();
+    printf("Game Over!\n");
+    pthread_cancel(threadId); // Terminate input thread
     return 0;
 }
 
-void initialize_game() {
-    system("clear");
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        bullets[i].active = 0;
-    }
+void initializeGame() {
+    // Initialize player
+    player.x = GAME_AREA_WIDTH / 2;
+    player.y = GAME_AREA_HEIGHT - 1;
+    player.isActive = 1;
+
+    // Initialize enemies
     for (int i = 0; i < MAX_ENEMIES; i++) {
-        enemies[i].active = 0;
+        enemies[i].x = rand() % GAME_AREA_WIDTH;
+        enemies[i].y = rand() % (GAME_AREA_HEIGHT / 2);
+        enemies[i].isActive = 1;
     }
-    spawn_enemy();
-}
 
-void run_game() {
-    while (game_running) {
-        update_bullets();
-        update_enemies();
-        check_collisions();
-        draw_game();
-        usleep(50000); // Slow down the game loop
+    // Initialize bullets
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        bullets[i].isActive = 0;
     }
 }
 
-void cleanup_game() {
-    printf("Game Over! Final score: %d\nPress any key to exit...\n", score);
-    getchar(); // Wait for a key press
+void drawGameArea() {
+    for (int y = 0; y < GAME_AREA_HEIGHT; y++) {
+        for (int x = 0; x < GAME_AREA_WIDTH; x++) {
+            int printed = 0;
+            if (player.x == x && player.y == y) {
+                printf("P");
+                printed = 1;
+            }
+            for (int i = 0; i < MAX_ENEMIES; i++) {
+                if (enemies[i].x == x && enemies[i].y == y && enemies[i].isActive) {
+                    printf("E");
+                    printed = 1;
+                }
+            }
+            for (int i = 0; i < MAX_BULLETS; i++) {
+                if (bullets[i].x == x && bullets[i].y == y && bullets[i].isActive) {
+                    printf("*");
+                    printed = 1;
+                }
+            }
+            if (!printed) {
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
 }
 
-void *keyboard_thread(void *arg) {
-    char ch;
-    system("/bin/stty raw");
-    while ((ch = getchar()) != 'q') {
-        switch(ch) {
+void *inputThread(void *param) {
+    char input;
+    while (1) {
+        input = getchar();
+        switch (input) {
             case 'a': // Move left
-                if (PLAYER_X > 1) PLAYER_X--;
+                if (player.x > 0) player.x--;
                 break;
             case 'd': // Move right
-                if (PLAYER_X < 80 - 2) PLAYER_X++;
+                if (player.x < GAME_AREA_WIDTH - 1) player.x++;
                 break;
-            case ' ': // Fire a bullet
-                fire_bullet();
+            case 's': // Shoot
+                fireBullet();
                 break;
+            case 'q': // Quit game
+                gameRunning = 0;
+                return NULL;
         }
     }
-    game_running = 0;
-    system("/bin/stty cooked");
-    return NULL;
 }
 
-void update_bullets() {
+void updateGame() {
+    moveBullets();
+    checkCollisions();
+}
+
+void fireBullet() {
     for (int i = 0; i < MAX_BULLETS; i++) {
-        if (bullets[i].active) {
+        if (!bullets[i].isActive) {
+            bullets[i].x = player.x;
+            bullets[i].y = player.y - 1;
+            bullets[i].isActive = 1;
+            break;
+        }
+    }
+}
+
+void moveBullets() {
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (bullets[i].isActive) {
             bullets[i].y--;
-            if (bullets[i].y < 1) {
-                bullets[i].active = 0;
+            if (bullets[i].y < 0) {
+                bullets[i].isActive = 0;
             }
         }
     }
 }
 
-void update_enemies() {
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
-            enemies[i].y++;
-            if (enemies[i].y > 20 - 2) {
-                enemies[i].active = 0;
-                spawn_enemy();
-            }
-        }
-    }
-}
-
-void check_collisions() {
+void checkCollisions() {
+    // Check bullet collisions with enemies
     for (int i = 0; i < MAX_BULLETS; i++) {
-        if (bullets[i].active) {
+        if (bullets[i].isActive) {
             for (int j = 0; j < MAX_ENEMIES; j++) {
-                if (enemies[j].active && bullets[i].x == enemies[j].x && bullets[i].y == enemies[j].y) {
-                    bullets[i].active = 0;
-                    enemies[j].active = 0;
-                    score += 100;
-                    spawn_enemy();
+                if (enemies[j].isActive && bullets[i].x == enemies[j].x && bullets[i].y == enemies[j].y) {
+                    enemies[j].isActive = 0;
+                    bullets[i].isActive = 0;
+                    break;
                 }
             }
         }
     }
-}
-
-void draw_game() {
-    system("clear");
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (bullets[i].active) {
-            printf("\033[%d;%dH|", bullets[i].y, bullets[i].x);
-        }
-    }
+    // Check if all enemies are defeated
+    int allDefeated = 1;
     for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (enemies[i].active) {
-            printf("\033[%d;%dHX", enemies[i].y, enemies[i].x);
-        }
-    }
-    printf("\033[%d;%dH^", PLAYER_Y, PLAYER_X);
-    printf("\033[1;1HScore: %d", score);
-    fflush(stdout);
-}
-
-void spawn_enemy() {
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (!enemies[i].active) {
-            enemies[i].active = 1;
-            enemies[i].x = rand() % (80 - 2) + 1;
-            enemies[i].y = 1;
+        if (enemies[i].isActive) {
+            allDefeated = 0;
             break;
         }
     }
-}
-
-void fire_bullet() {
-    for (int i = 0; i < MAX_BULLETS; i++) {
-        if (!bullets[i].active) {
-            bullets[i].active = 1;
-            bullets[i].x = PLAYER_X;
-            bullets[i].y = PLAYER_Y - 1;
-            break;
-        }
+    if (allDefeated) {
+        gameRunning = 0;
     }
 }
